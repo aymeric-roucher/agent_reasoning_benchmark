@@ -14,25 +14,6 @@ from transformers.agents.default_tools import Tool
 from transformers.agents.agents import AgentError
 
 
-class VisualQATool(Tool):
-    name = "visualizer"
-    description = "A tool that can answer questions about attached documents."
-
-    inputs = {
-        "question": {"description": "the question to answer", "type": str},
-        "image": {"description": "the image to answer the question on", "type": str},
-    }
-    client = InferenceClient(
-        model="impira/layoutlm-document-qa",
-    )
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, question: str, image: str) -> str:
-        output = self.client.visual_question_answering(image=image, question=question)[0]
-        return str({"answer": output["answer"], "score": round(output["score"], 3)})
-
-
 def acall_langchain_agent(agent: AgentExecutor, question: str) -> str:
     return agent.ainvoke({"input": question})
 

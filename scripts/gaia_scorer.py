@@ -40,7 +40,7 @@ def question_scorer(
     # if gt is a number
     if is_float(ground_truth):
         print(f"Evaluating {model_answer} as a number.")
-        normalized_answer = normalize_number_str(model_answer)
+        normalized_answer = normalize_number_str(str(model_answer))
         return normalized_answer == float(ground_truth)
 
     # if gt is a list
