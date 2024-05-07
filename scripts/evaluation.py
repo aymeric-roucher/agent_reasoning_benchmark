@@ -14,7 +14,6 @@ import datasets
 
 import numpy as np
 import re
-from Levenshtein import distance as levenshtein_distance
 
 
 _SENTINEL_KILL_CONSUMERS = object()
@@ -104,9 +103,7 @@ async def evaluate_answers(
     
     if output_file_path and os.path.isfile(output_file_path):
         previous_evaluations = pd.read_json(output_file_path, lines=True)
-        print('Previous evaluations:')
-
-        print(previous_evaluations)
+        print(f'Found {len(previous_evaluations)} previous evaluations!')
         if f"eval_score_{evaluator_name}" in previous_evaluations.columns:
             previous_evaluations = previous_evaluations.loc[previous_evaluations[f"eval_score_{evaluator_name}"].notna()]
             

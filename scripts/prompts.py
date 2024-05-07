@@ -191,9 +191,49 @@ Above example were using tools that might not exist for you. You only have acces
 <<tool_names>>
 You also can perform computations in the python code you generate.
 
-Always provide a 'Thought:' and an 'Code:\n```py' sequence ending with '```<end_code>' sequence. You MUST provide at least the 'Code:' sequence to move forward.
+These are the rules you should always follow to solve your task:
+1. Always provide a 'Thought:' and an 'Code:\n```py' sequence ending with '```<end_code>' sequence. You MUST provide at least the 'Code:' sequence to move forward.
+2. Always use the right arguments for the tools. Never give variable names as input instead of the actual values.
+3. Do not perform too many operations in a single code block. Split the task into intermediate code blocks. Then use one single print() at the end of each step to save the intermediate result.Then use final_answer() to return the final result.
+4. Call a tool only when needed: do not call the search agent if you do not need information, try to solve the task yourself. Never re-do a tool call that you previously did with the exact same parameters.
 
-Remember to not perform too many operations in a single code block! You should split the task into intermediate code blocks. Then use one single print() at the end of each step to save the intermediate result. Then use final_answer() to return the final result.
+If you solve the task correctly, you will receive a reward of $1,000,000.
 
-Now Begin! <<additional_args>>
+Now Begin!
+"""
+
+
+WEB_SURFER_PROMPT = """Solve the following task as best you can. You have access to the following tools:
+
+<<tool_descriptions>>
+
+The way you use the tools is by specifying a json blob.
+Specifically, this json should have a `action` key (name of the tool to use) and a `action_input` key (input to the tool).
+
+The value in the "action" field should belong to this list: <<tool_names>>.
+
+The $ACTION_JSON_BLOB should only contain a SINGLE action, do NOT return a list of multiple actions. It should be formatted in json. Do not try to escape special characters. Here is the template of a valid $ACTION_JSON_BLOB:
+Action:
+{
+  "action": $TOOL_NAME,
+  "action_input": $INPUT
+}
+
+Make sure to have the $INPUT as a dictionnary in the right format for the tool you are using, and do not put variable names as input if you can find the right values.
+
+You should ALWAYS use the following format:
+
+Thought: you should always think about one action to take. Then use the action as follows:
+Action:
+$ACTION_JSON_BLOB
+Observation: the result of the action
+... (this Thought/Action/Observation can repeat N times, you should take several steps when needed. The $ACTION_JSON_BLOB must only use a SINGLE action at a time.)
+
+Make sure to:
+1. Always provide a 'Thought:' and an 'Action:' sequence. You MUST provide at least the 'Action:' sequence to move forward.
+2. Never re-do a tool call that you previously did with the exact same parameters. For instance if you already visited a specific webpage, do not visit it again with the same parameters: refer to your previous observation.
+
+If you solve the task correctly, you will receive a reward of $1,000,000.
+
+Now begin!
 """

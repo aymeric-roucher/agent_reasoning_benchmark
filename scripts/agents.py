@@ -1,5 +1,6 @@
-from typing import List, Optional
-
+from typing import List, Optional, Dict
+import numexpr
+import math
 
 from langchain.agents.output_parsers import (
     ReActJsonSingleInputOutputParser,
@@ -26,12 +27,36 @@ from langchain.agents import AgentExecutor, load_tools
 from langchain.schema import HumanMessage
 from langchain.chat_models.base import BaseChatModel
 from langchain_community.chat_models.huggingface import ChatHuggingFace
-from langchain_core.tools import Tool
+from transformers.agents import Tool
 
 from scripts.prompts import HUMAN_PROMPT, SYSTEM_PROMPT, SCRATCHPAD_PROMPT
 
+class CalculatorTool(Tool):
+    name = "calculator"
+    description = "This is a tool that calculates. It can be used to perform simple arithmetic operations."
 
-def init_tools_with_llm(llm: BaseChatModel) -> List[Tool]:
+    inputs = {
+        "expression": {
+            "type": "text",
+            "description": "The expression to be evaluated.The variables used CANNOT be placeholders like 'x' or 'mike's age', they must be numbers",
+        }
+    }
+    output_type = "text"
+
+    def forward(self, expression):
+        if isinstance(expression, Dict):
+            expression = expression["expression"]
+        local_dict = {"pi": math.pi, "e": math.e}
+        output = str(
+            numexpr.evaluate(
+                expression.strip().replace("^", "**"),
+                global_dict={},  # restrict access to globals
+                local_dict=local_dict,  # add common mathematical functions
+            )
+        )
+        return output
+
+def init_tools_with_llm(llm: BaseChatModel):
     tools = load_tools(["serpapi", "llm-math"], llm=llm)
     # Rename tools in the same format used by other tools
     tools[0].name = "search"

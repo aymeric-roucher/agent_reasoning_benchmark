@@ -50,5 +50,6 @@ def process_images_and_text(image_path, query, client):
             "max_new_tokens": 200,
         }
     }
+    print(payload)
 
     return json.loads(client.post(json=payload).decode())[0]

@@ -2,7 +2,7 @@ import os
 import re
 from typing import Tuple
 from autogen.browser_utils import SimpleTextBrowser
-from transformers.agents.agents import ReactJSONAgent, DEFAULT_REACT_SYSTEM_PROMPT, Tool, AgentExecutionError
+from transformers.agents.agents import Tool
 import time
 from dotenv import load_dotenv
 
