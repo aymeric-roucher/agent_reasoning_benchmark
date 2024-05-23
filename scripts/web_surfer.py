@@ -5,6 +5,7 @@ from autogen.browser_utils import SimpleTextBrowser
 from transformers.agents.agents import Tool
 import time
 from dotenv import load_dotenv
+import requests
 
 load_dotenv(override=True)
 
@@ -20,6 +21,37 @@ browser_config = {
 }
 
 browser = SimpleTextBrowser(**browser_config)
+
+class SerpAPIBrowser(SimpleTextBrowser):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def _bing_api_call(self, query: str):
+        # Make sure the key was set
+        if self.bing_api_key is None:
+            raise ValueError("Missing Bing API key.")
+
+        # Prepare the request parameters
+        request_kwargs = self.request_kwargs.copy() if self.request_kwargs is not None else {}
+
+        if "headers" not in request_kwargs:
+            request_kwargs["headers"] = {}
+        request_kwargs["headers"]["Ocp-Apim-Subscription-Key"] = self.bing_api_key
+
+        if "params" not in request_kwargs:
+            request_kwargs["params"] = {}
+        request_kwargs["params"]["q"] = query
+        request_kwargs["params"]["textDecorations"] = False
+        request_kwargs["params"]["textFormat"] = "raw"
+
+        request_kwargs["stream"] = False
+
+        # Make the request
+        response = requests.get("https://api.bing.microsoft.com/v7.0/search", **request_kwargs)
+        response.raise_for_status()
+        results = response.json()
+
+        return results  # type: ignore[no-any-return]
 
 # Helper functions
 def _browser_state() -> Tuple[str, str]:

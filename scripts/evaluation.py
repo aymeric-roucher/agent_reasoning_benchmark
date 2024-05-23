@@ -170,16 +170,17 @@ def extract_numbers(string):
 
 
 def split_answer(row):
-    splitted = row["answer"].split("####")
-    row["true_reasoning"] = splitted[0]
-    str_answer = splitted[1].strip().replace(",", "") # remove thousand separators from GSM8K
-    row["true_answer"] = float(str_answer)
+    if row['task'] == 'GSM8K':
+        splitted = row["true_answer"].split("####")
+        row["true_reasoning"] = splitted[0]
+        str_answer = splitted[1].strip().replace(",", "") # remove thousand separators from GSM8K
+        row["true_answer"] = float(str_answer)
     return row
 
 
 def load_math_datasets(n_eval_samples = 30):
     math_dataset = (
-        datasets.load_dataset("gsm8k", "main")["train"].shuffle(seed=496).select(range(100))
+        datasets.load_dataset("GSM8K", "main")["train"].shuffle(seed=496).select(range(100))
     )
     math_dataset = pd.DataFrame(math_dataset)
 
@@ -191,31 +192,10 @@ def load_math_datasets(n_eval_samples = 30):
 
 
 def load_benchmark():
-    def split_answer(row):
-        splitted = row["answer"].split("####")
-        row["true_reasoning"] = splitted[0]
-        row["true_answer"] = float(splitted[1].strip())
-        return row
-
-    math_dataset = (
-        datasets.load_dataset("gsm8k", "main")["train"].shuffle(seed=42).select(range(40))
-    )
-    math_df = pd.DataFrame(math_dataset)
-    math_df = math_df.apply(split_answer, axis=1)
-    math_df = math_df.drop(columns=["answer"])
-    math_df['task'] = 'gsm8k'
-
-    dataset = datasets.load_dataset("m-ric/agents_small_benchmark")['train']
+    dataset = datasets.load_dataset("m-ric/agents_medium_benchmark")['train']
     dataset = dataset.rename_column("answer", "true_answer")
-    hotpotqa = dataset.filter(lambda row: 'Hotpot' in row["task"])
-    hotpotqa = hotpotqa.select(range(30))
-    hotpotqa_df = pd.DataFrame(hotpotqa)
-    hotpotqa_df['task'] = 'HotpotQA'
-    gaia = dataset.filter(lambda row: 'GAIA' in row["task"])
-    gaia_df = pd.DataFrame(gaia)
-    gaia_df['task'] = 'GAIA'
-    
-    return pd.concat([math_df, hotpotqa_df, gaia_df])
+    df = pd.DataFrame(dataset)
+    return df.apply(split_answer, axis=1)
 
 
 def extract_numbers(output):
