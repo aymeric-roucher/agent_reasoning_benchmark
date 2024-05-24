@@ -1,7 +1,9 @@
+# Shamelessly stolen from Microsoft Autogen team: thanks to them for this great resource!
+# https://github.com/microsoft/autogen/blob/gaia_multiagent_v01_march_1st/autogen/browser_utils.py
 import os
 import re
 from typing import Tuple
-from autogen.browser_utils import SimpleTextBrowser
+from .browser import SimpleTextBrowser
 from transformers.agents.agents import Tool
 import time
 from dotenv import load_dotenv

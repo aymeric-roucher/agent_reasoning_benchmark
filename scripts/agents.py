@@ -76,7 +76,10 @@ def build_openai_agent_with_tools(model_id: Optional[str] = "gpt-4-1106-preview"
     tools = init_tools_with_llm(llm)
 
 
-    llm_with_tools = llm.bind(functions=[format_tool_to_openai_function(t) for t in tools])
+    llm_with_tools = llm.bind(
+        functions=[format_tool_to_openai_function(t) for t in tools],
+        stop=["Observation:", "<|eot_id|>"]
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", "You are a helpful assistant. Answer the following question:"),
@@ -101,7 +104,7 @@ def build_openai_agent_with_tools(model_id: Optional[str] = "gpt-4-1106-preview"
         verbose=True,
         return_intermediate_steps=True,
         handle_parsing_errors=True,
-        max_iterations=5,
+        max_iterations=7,
     )
 
 
@@ -172,7 +175,7 @@ def build_hf_agent_with_tools(hf_endpoint_url: Optional[str] = None, repo_id: Op
     )
 
     # define the agent
-    chat_model_with_stop = chat_model.bind(stop=["\nObservation"])
+    chat_model_with_stop = chat_model.bind(stop=["Observation:", "<|eot_id|>"])
     agent = (
         {
             "input": lambda x: x["input"],
@@ -189,7 +192,7 @@ def build_hf_agent_with_tools(hf_endpoint_url: Optional[str] = None, repo_id: Op
         verbose=True,
         return_intermediate_steps=True,
         handle_parsing_errors=True,
-        max_iterations=5,
+        max_iterations=7,
     )
 
 
