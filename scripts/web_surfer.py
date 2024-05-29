@@ -108,7 +108,7 @@ class NavigationalSearchTool(Tool):
 
 class VisitTool(Tool):
     name="visit_page"
-    description="Visit a webpage at a given URL and return its text."
+    description="Visit a webpage at a given URL and return its text. This will not work is the page is a pdf or txt: in that case, use the download_file tool instead."
     inputs = {"url": {"type": "text", "description": "The relative or absolute url of the webapge to visit."}}
     output_type = "text"
 
@@ -118,16 +118,46 @@ class VisitTool(Tool):
         return header.strip() + "\n=======================\n" + content
 
 
+from pypdf import PdfReader
+from markdownify import markdownify as md
+
+def extract_text_from_pdf(pdf_path):
+    pdf = PdfReader(pdf_path)
+    text = ""
+    for page in pdf.pages:
+        text += page.extract_text()
+    return md(text)
+
+
 class DownloadTool(Tool):
     name="download_file"
-    description="Download a file at a given URL and, if possible, return its text."
+    description="Download a file at a given URL and, if possible, return its text. Use this to visit a PDF or text file."
     inputs = {"url": {"type": "text", "description": "The relative or absolute url of the file to be downloaded."}}
     output_type = "text"
 
     def forward(self, url: str) -> str:
-        browser.visit_page(url)
-        header, content = _browser_state()
-        return header.strip() + "\n=======================\n" + content
+        if "arxiv" in url:
+            url = url.replace("abs", "pdf")
+        response = requests.get(url)
+        if "pdf" in url:
+            new_path = "/tmp/metadata.pdf"
+        else:
+            new_path = "/tmp/metadata.txt"
+
+        with open(new_path, "wb") as f:
+            f.write(response.content)
+
+        if "pdf" in url:
+            text = extract_text_from_pdf(new_path)
+        else:
+            text = ""
+            with open(new_path, "r") as f:
+                while True:
+                    line = f.readline()
+                    if (not line) or (len(text) > 20000):
+                        break
+                    text += line
+        return text
     
 
 class PageUpTool(Tool):
