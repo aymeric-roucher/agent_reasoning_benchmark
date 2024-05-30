@@ -28,15 +28,9 @@ from urllib.request import url2pathname
 from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional, Union, Tuple
 
-# Optional PDF support
-IS_PDF_CAPABLE = False
-try:
-    import pdfminer
-    import pdfminer.high_level
+import pdfminer
+import pdfminer.high_level
 
-    IS_PDF_CAPABLE = True
-except ModuleNotFoundError:
-    pass
 
 # Optional YouTube transcription support
 IS_YOUTUBE_TRANSCRIPT_CAPABLE = False
@@ -70,11 +64,6 @@ class PlainTextConverter(DocumentConverter):
             return None
 
         content_type, encoding = mimetypes.guess_type("__placeholder" + extension)
-        if content_type is None:
-            return None
-
-        if "text/" not in content_type.lower():
-            return None
 
         text_content = ""
         with open(local_path, "rt") as fh:
@@ -330,7 +319,7 @@ class XlsxConverter(HtmlConverter):
             title=None,
             text_content=md_content.strip(),
         )
-
+        
 
 class PptxConverter(HtmlConverter):
     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
@@ -421,7 +410,7 @@ class PptxConverter(HtmlConverter):
 
 class ImageConverter(DocumentConverter):
     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
-        # Bail if not a XLSX
+        # Bail if not an image
         extension = kwargs.get("file_extension", "")
         if extension.lower() not in [".jpg", ".jpeg", ".png"]:
             return None
@@ -521,10 +510,10 @@ class ImageConverter(DocumentConverter):
             response = client.create(messages=messages)
             return client.extract_text_or_completion_object(response)[0]
 
-class FileConversionException(BaseException):
+class FileConversionException(Exception):
     pass
 
-class UnsupportedFormatException(BaseException):
+class UnsupportedFormatException(Exception):
     pass
 
 class MarkdownConverter:
@@ -556,9 +545,7 @@ class MarkdownConverter:
         self.register_page_converter(XlsxConverter())
         self.register_page_converter(PptxConverter())
         self.register_page_converter(ImageConverter())
-
-        if IS_PDF_CAPABLE:
-            self.register_page_converter(PdfConverter())
+        self.register_page_converter(PdfConverter())
 
     def convert(self, source, **kwargs):
         """
@@ -674,9 +661,11 @@ class MarkdownConverter:
             )
 
         # Nothing can handle it!
-        raise UnsupportedFormatException(
-            f"Could not convert '{local_path}' to Markdown. The formats {extensions} are not supported."
-        )
+        # raise UnsupportedFormatException(
+        #     f"Could not convert '{local_path}' to Markdown. The formats {extensions} are not supported."
+        # )
+        res = PlainTextConverter().convert(local_path, **kwargs)
+        return res
 
     def _append_ext(self, extensions, ext):
         """Append a unique non-None, non-empty extension to a list of extensions."""

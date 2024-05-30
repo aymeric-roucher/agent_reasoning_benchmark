@@ -200,7 +200,7 @@ class FinderTool(Tool):
 
 class FindNextTool(Tool):
     name="find_next"
-    description="Scroll the viewport to next occurrence of the search string."
+    description="Scroll the viewport to next occurrence of the search string. This is equivalent to finding the next match in a Ctrl+F search."
     inputs = {}
     output_type = "text"
 

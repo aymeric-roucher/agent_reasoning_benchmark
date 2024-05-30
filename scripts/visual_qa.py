@@ -39,7 +39,6 @@ def process_images_and_text(image_path, query, client):
 
         return image_string
     
-    print(image_path)
 
     image_string = encode_local_image(image_path)
     prompt_with_images = prompt_with_template.replace("<image>", "![]({}) ").format(image_string)
@@ -52,7 +51,6 @@ def process_images_and_text(image_path, query, client):
             "max_new_tokens": 200,
         }
     }
-    print(payload)
 
     return json.loads(client.post(json=payload).decode())[0]
 
