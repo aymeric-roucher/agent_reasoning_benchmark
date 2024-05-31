@@ -618,6 +618,8 @@ class MarkdownConverter:
 
             # Convert
             result = self._convert(temp_path, extensions, url=response.url)
+        except Exception as e:
+            print(f"Error in converting: {e}")
 
         # Clean up
         finally:
@@ -643,16 +645,16 @@ class MarkdownConverter:
                 # If we hit an error log it and keep trying
                 try:
                     res = converter.convert(local_path, **_kwargs)
+                    if res is not None:
+                        # Normalize the content
+                        res.text_content = "\n".join([line.rstrip() for line in re.split(r"\r?\n", res.text_content)])
+                        res.text_content = re.sub(r"\n{3,}", "\n\n", res.text_content)
+
+                        # Todo
+                        return res
                 except Exception as e:
                     error_trace = ("\n\n" + traceback.format_exc()).strip()
 
-                if res is not None:
-                    # Normalize the content
-                    res.text_content = "\n".join([line.rstrip() for line in re.split(r"\r?\n", res.text_content)])
-                    res.text_content = re.sub(r"\n{3,}", "\n\n", res.text_content)
-
-                    # Todo
-                    return res
 
         # If we got this far without success, report any exceptions
         if len(error_trace) > 0:

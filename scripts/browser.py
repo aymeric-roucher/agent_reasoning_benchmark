@@ -347,27 +347,33 @@ class SimpleTextBrowser:
                     local_uri = pathlib.Path(download_path).as_uri()
                     self.set_address(local_uri)
 
-        except UnsupportedFormatException:
+        except UnsupportedFormatException as e:
+            print(e)
             self.page_title = ("Download complete.",)
             self._set_page_content(f"# Download complete\n\nSaved file to '{download_path}'")
-        except FileConversionException:
+        except FileConversionException as e:
+            print(e)
             self.page_title = ("Download complete.",)
             self._set_page_content(f"# Download complete\n\nSaved file to '{download_path}'")
         except FileNotFoundError:
             self.page_title = "Error 404"
             self._set_page_content(f"## Error 404\n\nFile not found: {download_path}")
-        except requests.exceptions.RequestException:
-            self.page_title = f"Error {response.status_code}"
+        except requests.exceptions.RequestException as request_exception:
+            try:
+                self.page_title = f"Error {response.status_code}"
 
-            # If the error was rendered in HTML we might as well render it
-            content_type = response.headers.get("content-type", "")
-            if content_type is not None and "text/html" in content_type.lower():
-                res = self._mdconvert.convert(response)
-                self.page_title = f"Error {response.status_code}"
-                self._set_page_content(f"## Error {response.status_code}\n\n{res.text_content}")
-            else:
-                text = ""
-                for chunk in response.iter_content(chunk_size=512, decode_unicode=True):
-                    text += chunk
-                self.page_title = f"Error {response.status_code}"
-                self._set_page_content(f"## Error {response.status_code}\n\n{text}")
+                # If the error was rendered in HTML we might as well render it
+                content_type = response.headers.get("content-type", "")
+                if content_type is not None and "text/html" in content_type.lower():
+                    res = self._mdconvert.convert(response)
+                    self.page_title = f"Error {response.status_code}"
+                    self._set_page_content(f"## Error {response.status_code}\n\n{res.text_content}")
+                else:
+                    text = ""
+                    for chunk in response.iter_content(chunk_size=512, decode_unicode=True):
+                        text += chunk
+                    self.page_title = f"Error {response.status_code}"
+                    self._set_page_content(f"## Error {response.status_code}\n\n{text}")
+            except NameError:
+                self.page_title = f"Error"
+                self._set_page_content(f"## Error\n\n{str(request_exception)}")
