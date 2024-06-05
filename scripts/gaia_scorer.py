@@ -26,26 +26,24 @@ def split_string(
     return re.split(pattern, s)
 
 
+def is_float(element: any) -> bool:
+    try:
+        float(element)
+        return True
+    except ValueError:
+        return False
+
 def question_scorer(
     model_answer: str,
     ground_truth: str,
 ) -> bool:
-    def is_float(element: any) -> bool:
-        try:
-            float(element)
-            return True
-        except ValueError:
-            return False
-
     # if gt is a number
     if is_float(ground_truth):
-        print(f"Evaluating {model_answer} as a number.")
         normalized_answer = normalize_number_str(str(model_answer))
         return normalized_answer == float(ground_truth)
 
     # if gt is a list
     elif any(char in ground_truth for char in [",", ";"]):
-        print(f"Evaluating {model_answer} as a comma separated list.")
         # question with the fish: normalization removes punct
 
         gt_elems = split_string(ground_truth)
@@ -74,8 +72,34 @@ def question_scorer(
 
     # if gt is a str
     else:
-        print(f"Evaluating {model_answer} as a string.")
         return normalize_str(model_answer) == normalize_str(ground_truth)
+
+def check_prediction_contains_answer_letters_in_order(prediction, true_answer):
+    prediction = prediction.lower()
+    true_answer = true_answer.lower()
+    if len(prediction) > len(true_answer) * 3:
+        return False
+    i = 0
+    for letter in true_answer:
+        if letter in prediction[i:]:
+            i += prediction[i:].index(letter)
+        else:
+            return False
+    return True
+
+
+def check_close_call(prediction, true_answer, is_correct):
+    if is_correct:
+        return True
+    else:
+        if is_float(true_answer):
+            return is_correct
+        else:
+            if check_prediction_contains_answer_letters_in_order(str(prediction), str(true_answer)):
+                print(f"Close call: {prediction} vs {true_answer}")
+                return True
+            else:
+                return False
 
 
 def normalize_str(input_str, remove_punct=True) -> str:

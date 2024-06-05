@@ -605,6 +605,7 @@ class MarkdownConverter:
 
         # Save the file locally to a temporary file. It will be deleted before this method exits
         handle, temp_path = tempfile.mkstemp()
+        print("CREATING FILE:", temp_path)
         fh = os.fdopen(handle, "wb")
         result = None
         try:

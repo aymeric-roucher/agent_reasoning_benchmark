@@ -21,6 +21,7 @@ from scripts.web_surfer import (
     PageDownTool,
     FinderTool,
     FindNextTool,
+    browser,
 )
 from scripts.mdconvert import MarkdownConverter
 
@@ -31,25 +32,17 @@ from transformers.agents import HfEngine
 from transformers.agents import ReactCodeAgent, HfEngine
 from transformers.agents.prompts import DEFAULT_REACT_CODE_SYSTEM_PROMPT, DEFAULT_REACT_JSON_SYSTEM_PROMPT
 from transformers.agents.default_tools import Tool
-from pypdf import PdfReader
-from markdownify import markdownify as md
 from scripts.visual_qa import VisualQATool, VisualQAGPT4Tool
-from transformers.agents import SpeechToTextTool
+from transformers.agents import SpeechToTextTool, PythonInterpreterTool
 import shutil
+import asyncio
 
-WEB_TOOLS = [
-    SearchInformationTool(),
-    NavigationalSearchTool(),
-    VisitTool(),
-    DownloadTool(),
-    PageUpTool(),
-    PageDownTool(),
-    FinderTool(),
-    FindNextTool(),
-]
+### IMPORTANT: EVALUATION SWITCHES
 
+USE_OS_MODELS = False
+USE_JSON_AGENT = False
 
-USE_OS_MODELS = True
+### BUILD LLM ENGINES
 
 role_conversions = {
     MessageRole.TOOL_RESPONSE: MessageRole.USER,
@@ -57,7 +50,7 @@ role_conversions = {
 
 
 class OpenAIModel:
-    def __init__(self, model_name="gpt-4o-2024-05-13"):
+    def __init__(self, model_name="gpt-4-0125-preview"):
         self.model_name = model_name
         self.client = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
@@ -77,6 +70,9 @@ class OpenAIModel:
 oai_llm_engine = OpenAIModel()
 hf_llm_engine = HfEngine(model="meta-llama/Meta-Llama-3-70B-Instruct")
 
+
+### LOAD EVALUATION DATASET
+
 eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all")["validation"]
 eval_ds = eval_ds.rename_columns(
     {"Question": "question", "Final answer": "true_answer", "Level": "task"}
@@ -86,6 +82,10 @@ eval_ds = eval_ds.rename_columns(
 def preprocess_file_paths(row):
     if len(row["file_name"]) > 0:
         row["file_name"] = "data/gaia/validation/" + row["file_name"]
+
+    replaced_name = row["file_name"].replace(".xlsx", ".png").replace('.pdf', '.png')
+    if os.path.exists(replaced_name):
+        row["file_name"] = replaced_name
     return row
 
 
@@ -102,10 +102,22 @@ websurfer_llm_engine = HfEngine(
     model="CohereForAI/c4ai-command-r-plus",
 )  # chosen for its high context length
 
-# Replace with OAI
+# Replace with OAI if needed
 if not USE_OS_MODELS:
     websurfer_llm_engine = oai_llm_engine
 
+### BUILD AGENTS & TOOLS
+
+WEB_TOOLS = [
+    SearchInformationTool(),
+    NavigationalSearchTool(),
+    VisitTool(),
+    DownloadTool(),
+    PageUpTool(),
+    PageDownTool(),
+    FinderTool(),
+    FindNextTool(),
+]
 
 surfer_agent = ReactJsonAgent(
     llm_engine=websurfer_llm_engine,
@@ -114,6 +126,7 @@ surfer_agent = ReactJsonAgent(
     verbose=1,
     system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT + "\nAdditionally, if after some searching you find out that you need more information to answer the question, you can use `final_answer` with your request for clarification as argument to request for more information.",
 )
+
 
 params = {
     "engine": "bing",
@@ -124,26 +137,19 @@ params = {
 
 class SearchTool(Tool):
     name = "ask_search_agent"
-    description = "A search agent that will browse the internet to answer a query. Use it to gather informations, not for problem-solving."
+    description = "A search agent that will browse the internet to answer your query. Ask him for all your web-search related questions, but he's unable to do problem-solving. Provide him as much context as possible, in particular if you need to search on a specific timeframe!"
 
     inputs = {
         "query": {
-            "description": "Your query, as a natural language sentence. You are talking to an human, so provide them with as much context as possible!",
+            "description": "Your query, as a natural language sentence. You are talking to an human, so provide them with as much context as possible! ",
             "type": "text",
         }
     }
     output_type = "text"
+    already_started = False
 
     def forward(self, query: str) -> str:
-        return surfer_agent.run(query)
-
-
-def extract_text_from_pdf(pdf_path):
-    pdf = PdfReader(pdf_path)
-    text = ""
-    for page in pdf.pages:
-        text += page.extract_text()
-    return md(text)
+        return surfer_agent.run(query + (f"\nYour browser is already open to the page '{browser.page_title}' at the address '{browser.address}'." if self.already_started else ""))
 
 
 class ZipInspectorTool(Tool):
@@ -225,48 +231,59 @@ TASK_SOLVING_TOOLBOX = [
     ZipInspectorTool(),
 ]
 
-GAIA_PROMPT = (
-    DEFAULT_REACT_CODE_SYSTEM_PROMPT
-    + """
-Remember: Your $FINAL_ANSWER should be a number OR as few words as possible OR a comma separated list of numbers and/or strings.
-ADDITIONALLY, your $FINAL_ANSWER MUST adhere to any formatting instructions specified in the original question (e.g., alphabetization, sequencing, units, rounding, decimal places, etc.)
-If you are asked for a number, express it numerically (i.e., with digits rather than words), don't use commas, and don't include units such as $ or percent signs unless specified otherwise.
-If you are asked for a string, don't use articles or abbreviations (e.g. for cities), unless specified otherwise. Don't output any final sentence punctuation such as '.', '!', or '?'.
-If you are asked for a comma separated list, apply the above rules depending on whether the elements are numbers or strings.
-If you are unable to determine the final answer, use 'final_answer("Unable to determine")'
-Never try to guess file paths for files that do not exist.
-"""
-)
+if USE_JSON_AGENT:
+    TASK_SOLVING_TOOLBOX.append(PythonInterpreterTool())
 
 hf_llm_engine = HfEngine(model="meta-llama/Meta-Llama-3-70B-Instruct")
 
-react_agent = ReactCodeAgent(
-    llm_engine=(hf_llm_engine if USE_OS_MODELS else oai_llm_engine),
-    tools=TASK_SOLVING_TOOLBOX,
-    max_iterations=10,
-    verbose=0,
-    memory_verbose=True,
-    system_prompt=GAIA_PROMPT,
-    additional_authorized_imports=["requests", "zipfile", "os", "pandas"],
-)
+llm_engine = hf_llm_engine if USE_OS_MODELS else oai_llm_engine
+
+if USE_JSON_AGENT:
+    react_agent = ReactJsonAgent(
+        llm_engine=llm_engine,
+        tools=TASK_SOLVING_TOOLBOX,
+        max_iterations=10,
+        verbose=0,
+        memory_verbose=True,
+        system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT,
+    )
+else:
+    react_agent = ReactCodeAgent(
+        llm_engine=llm_engine,
+        tools=TASK_SOLVING_TOOLBOX,
+        max_iterations=10,
+        verbose=0,
+        memory_verbose=True,
+        system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
+        additional_authorized_imports=["requests", "zipfile", "os", "pandas"],
+    )
+
+### EVALUATE
+
+from scripts.reformulator import prepare_response
 
 async def call_transformers(agent, question: str, **kwargs) -> str:
-    result = agent.run(question, **kwargs)
+    result = agent.run(question, start_with_planning=False, **kwargs)
+    agent_memory = agent.write_inner_memory_from_logs()[1:]
+    try:
+        final_result = prepare_response(question, agent_memory, llm_engine)
+    except Exception as e:
+        final_result = result
     return {
-        "output": str(result),
+        "output": str(final_result),
         "intermediate_steps": [
             {key: value for key, value in log.items() if key != "agent_memory"}
             for log in agent.logs
         ],
     }
 
-import asyncio
+# surfer_agent.run("What was the revenue of Carrefour in 2013?")
 
 results = asyncio.run(answer_questions(
     eval_ds,
     react_agent,
-    "react_code_llama3_30-may_with_gpt4o_vision",
+    "react_code_gpt4-turbo_4-june",
     output_folder=OUTPUT_DIR,
     agent_call_function=call_transformers,
-    add_optional_visualizer_tool=True,
+    use_attached_files=True,
 ))

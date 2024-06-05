@@ -111,8 +111,6 @@ class VisualQAGPT4Tool(Tool):
     }
     output_type = "text"
 
-    client = InferenceClient("HuggingFaceM4/idefics2-8b-chatty")
-
     def forward(self, question: str, image_path: str) -> str:
         base64_image = encode_image(image_path)
 

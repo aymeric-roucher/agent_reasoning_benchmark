@@ -2,19 +2,27 @@
 # https://github.com/microsoft/autogen/blob/gaia_multiagent_v01_march_1st/autogen/browser_utils.py
 import os
 import re
-from typing import Tuple
-from .browser import SimpleTextBrowser
+from typing import Tuple, Optional
 from transformers.agents.agents import Tool
 import time
 from dotenv import load_dotenv
 import requests
+from pypdf import PdfReader
+from markdownify import markdownify as md
+
+
+USE_SERPAPI_BROWSER = True
+
+if USE_SERPAPI_BROWSER:
+    from .serpapi_browser import SimpleTextBrowser
+else:
+    from .browser import SimpleTextBrowser
 
 load_dotenv(override=True)
 
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
 
 browser_config = {
-    "bing_api_key": os.environ["BING_API_KEY"],
     "viewport_size": 1024 * 5,
     "downloads_folder": "coding",
     "request_kwargs": {
@@ -22,38 +30,13 @@ browser_config = {
     },
 }
 
+if USE_SERPAPI_BROWSER:
+    browser_config["serpapi_key"] = os.environ["SERPAPI_API_KEY"]
+else:
+    browser_config["bing_api_key"] = os.environ["BING_API_KEY"]
+
 browser = SimpleTextBrowser(**browser_config)
 
-class SerpAPIBrowser(SimpleTextBrowser):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def _bing_api_call(self, query: str):
-        # Make sure the key was set
-        if self.bing_api_key is None:
-            raise ValueError("Missing Bing API key.")
-
-        # Prepare the request parameters
-        request_kwargs = self.request_kwargs.copy() if self.request_kwargs is not None else {}
-
-        if "headers" not in request_kwargs:
-            request_kwargs["headers"] = {}
-        request_kwargs["headers"]["Ocp-Apim-Subscription-Key"] = self.bing_api_key
-
-        if "params" not in request_kwargs:
-            request_kwargs["params"] = {}
-        request_kwargs["params"]["q"] = query
-        request_kwargs["params"]["textDecorations"] = False
-        request_kwargs["params"]["textFormat"] = "raw"
-
-        request_kwargs["stream"] = False
-
-        # Make the request
-        response = requests.get("https://api.bing.microsoft.com/v7.0/search", **request_kwargs)
-        response.raise_for_status()
-        results = response.json()
-
-        return results  # type: ignore[no-any-return]
 
 # Helper functions
 def _browser_state() -> Tuple[str, str]:
@@ -72,19 +55,37 @@ def _browser_state() -> Tuple[str, str]:
 
     header += f"Viewport position: Showing page {current_page+1} of {total_pages}.\n"
 
+    print("VIEWPORT LEN: ", len(browser.viewport))
+
     return (header, browser.viewport)
 
 
 class SearchInformationTool(Tool):
     name="informational_web_search"
     description="Perform an INFORMATIONAL web search query then return the search results."
-    inputs = {"query": {"type": "text", "description": "The informational web search query to perform."}}
+    inputs = {
+        "query": {
+            "type": "text",
+            "description": "The informational web search query to perform."
+        }
+    }
+    if USE_SERPAPI_BROWSER:
+        inputs["filter_year"]= {
+            "type": "text",
+            "description": "[Optional parameter]: filter the search results to only include pages from a specific year. For example, '2020' will only include pages from 2020. Make sure to use this parameter if you're trying to search for articles from a specific date!"
+        }
     output_type = "text"
 
-    def forward(self, query: str) -> str:
-        browser.visit_page(f"bing: {query}")
-        header, content = _browser_state()
-        return header.strip() + "\n=======================\n" + content
+    if USE_SERPAPI_BROWSER:
+        def forward(self, query: str, filter_year: Optional[int] = None) -> str:
+            browser.visit_page(f"google: {query}", filter_year=filter_year)
+            header, content = _browser_state()
+            return header.strip() + "\n=======================\n" + content
+    else:
+        def forward(self, query: str) -> str:
+            browser.visit_page(f"bing: {query}")
+            header, content = _browser_state()
+            return header.strip() + "\n=======================\n" + content
 
 
 class NavigationalSearchTool(Tool):
@@ -94,7 +95,10 @@ class NavigationalSearchTool(Tool):
     output_type = "text"
 
     def forward(self, query: str) -> str:
-        browser.visit_page(f"bing: {query}")
+        if USE_SERPAPI_BROWSER:
+            browser.visit_page(f"google: {query}")
+        else:
+            browser.visit_page(f"bing: {query}")
 
         # Extract the first linl
         m = re.search(r"\[.*?\]\((http.*?)\)", browser.page_content)
@@ -118,9 +122,6 @@ class VisitTool(Tool):
         return header.strip() + "\n=======================\n" + content
 
 
-from pypdf import PdfReader
-from markdownify import markdownify as md
-
 def extract_text_from_pdf(pdf_path):
     pdf = PdfReader(pdf_path)
     text = ""
@@ -131,7 +132,7 @@ def extract_text_from_pdf(pdf_path):
 
 class DownloadTool(Tool):
     name="download_file"
-    description="Download a file at a given URL and, if possible, return its text. Use this to visit a PDF or text file."
+    description="Download a file at a given URL and return its text. Use this to inspect a PDF or text file."
     inputs = {"url": {"type": "text", "description": "The relative or absolute url of the file to be downloaded."}}
     output_type = "text"
 
@@ -212,6 +213,3 @@ class FindNextTool(Tool):
             return header.strip() + "\n=======================\nThe search string was not found on this page."
         else:
             return header.strip() + "\n=======================\n" + content
-
-
-# f"Your browser is currently open to the page '{browser.page_title}' at the address '{browser.address}'."

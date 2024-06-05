@@ -175,7 +175,7 @@ async def answer_questions(
     agent_name: str,
     output_folder: str = "output",
     agent_call_function: Callable = call_langchain_agent,
-    add_optional_visualizer_tool: bool = False
+    use_attached_files: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Evaluates the agent on a given dataset.
@@ -203,34 +203,35 @@ async def answer_questions(
     results_df = pd.DataFrame(results)
 
     for _, example in tqdm(enumerate(dataset), total=len(dataset)):
-        if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique():
-                continue
-        additional_kwargs = {}
-        if add_optional_visualizer_tool:
+        prompt_use_files = ""
+        if use_attached_files:
             if example['file_name']:
+                prompt_use_files += f"To answer the question above, you will have to use these attached files:"
                 if example['file_name'].split('.')[-1] in ['pdf', 'xlsx']:
                     image_path = example['file_name'].split('.')[0] + '.png'
                     if os.path.exists(image_path):
-                        additional_kwargs['image_path'] = image_path
+                        prompt_use_files += f"\nAttached image: {image_path}"
                     else:
-                        additional_kwargs['attached_file_path'] = example['file_name']
+                        prompt_use_files += f"\nAttached file: {example['file_name']}"
                 elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
-                    image_path = example['file_name']
-                    additional_kwargs['image_path'] = image_path
+                    prompt_use_files += f"\nAttached image: {example['file_name']}"
                 elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
-                    additional_kwargs['audio_path'] = example['file_name']
+                    prompt_use_files += f"\nAttached audio: {example['file_name']}"
                 else:
-                    additional_kwargs['attached_file_path'] = example['file_name']
-                
+                    prompt_use_files += f"\nAttached file: {example['file_name']}"
+            else:
+                prompt_use_files += "\nYou have been given no local files to access."
+            example['question'] = example['question'] + prompt_use_files
 
+        if len(results_df) > 0:
+            if example["question"] in results_df["question"].unique():
+                continue
         # run agent
         result = await arun_agent(
             example=example,
             agent_executor=agent,
             agent_name=agent_name,
             agent_call_function=agent_call_function,
-            **additional_kwargs
         )
 
         # add in example metadata
@@ -308,125 +309,6 @@ def answer_questions_sync(
                 json.dump(d, f, default=serialize_agent_error)
                 f.write('\n')  # add a newline for JSONL format
     return results
-
-
-# _SENTINEL_KILL_CONSUMERS = object()
-
-# async def answer_questions_parallel(
-#     dataset: Dataset,
-#     agent: AgentExecutor,
-#     agent_name: str,
-#     output_folder: str = "output",
-#     agent_call_function: Callable = call_langchain_agent,
-#     add_optional_visualizer_tool: bool = False
-# ) -> List[Dict[str, Any]]:
-#     """
-#     Evaluates the agent on a given dataset.
-
-#     Args:
-#         dataset (Dataset): The dataset to test the agent on.
-#         agent: The agent.
-#         agent_name (str): The name of the agent model.
-
-#     Returns:
-#         List[Dict[str, Any]]: A list of dictionaries containing the evaluation results for each example in the dataset.
-#         Each dictionary includes the agent model ID, evaluator model ID, question, ground truth answer, prediction,
-#         intermediate steps, evaluation score, evaluation feedback, tool call parsing error flag, iteration limit
-#         exceeded flag, agent error (if any), and example metadata (task).
-#     """
-#     output_path = f"{output_folder}/{agent_name}.jsonl"
-#     try:
-#         results = pd.read_json(output_path, lines=True).to_dict(orient="records")
-#         print(f"Found {len(results)} previous results!")
-#     except Exception as e:
-#         print(e)
-#         print("Found no usable records! 🤔 Starting new.")
-#         results = []
-
-#     results_df = pd.DataFrame(results)
-
-#     examples_to_do = []
-
-#     for example in dataset:
-#         if (
-#             len(results_df) == 0
-#             or "question" not in results_df.columns
-#             or not example["question"] in results_df["question"].unique()
-#         ):
-#             examples_to_do.append(example)
-
-#     def get_additional_kwargs(example):
-#         additional_kwargs = {}
-#         if add_optional_visualizer_tool:
-#             if example['file_name']:
-#                 if example['file_name'].split('.')[-1] in ['pdf', 'xlsx', 'txt']:
-#                     image_path = example['file_name'].split('.')[0] + '.png'
-#                     additional_kwargs['image_path'] = image_path
-#                 elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
-#                     image_path = example['file_name']
-#                     additional_kwargs['image_path'] = image_path
-#                 elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
-#                     additional_kwargs['audio_path'] = example['file_name']
-#                 else:
-#                     additional_kwargs['attached_file_path'] = example['file_name']
-#         return additional_kwargs
-
-#     print(f"Launching tests for {len(dataset) - len(results_df)} examples...")
-#     writer_queue = Queue()
-
-#     from copy import deepcopy
-
-#     with open(output_path, "a") as output_file:
-#         def write_line():
-#             while True:
-#                 if not writer_queue.empty():
-#                     annotated_example = writer_queue.get()
-#                     print("Writing example:", annotated_example)
-#                     print("To file:", output_file)
-                    
-#                     if annotated_example is _SENTINEL_KILL_CONSUMERS:
-#                         writer_queue.put(_SENTINEL_KILL_CONSUMERS) # put it back so that other consumers see it
-#                         return
-                    
-#                     annotated_example = {k: str(v) for k, v in annotated_example.items()}
-
-#                     # Row comes out of writer_queue; JSON writing goes here
-#                     json.dump(annotated_example, output_file, default=serialize_agent_error)
-#                     output_file.write('\n')
-        
-#         consumer = Thread(target=write_line)
-#         consumer.setDaemon(True)
-#         consumer.start()
-#         print(len(examples_to_do), "examples to do.")
-
-#         tasks = [arun_agent(
-#             example=example,
-#             agent_executor=agent,
-#             agent_name=agent_name,
-#             agent_call_function=agent_call_function,
-#             writer_queue=writer_queue,
-#             **get_additional_kwargs(example)
-#         ) for example in examples_to_do]
-
-#         test_results = [await f for f in tqdm.tqdm(asyncio.as_completed(tasks), total=len(tasks))]
-        
-#         with ThreadPoolExecutor() as executor:
-#             futures = {executor.submit(run_agent, agent, example, agent_name, agent_call_function, writer_queue, **get_additional_kwargs(example)): example for example in examples_to_do}
-#             for future in as_completed(futures):
-#                 example = futures[future]
-#                 try:
-#                     result = future.result()
-#                 except Exception as e:
-#                     print(f"Error on {example['question']}: {e}")
-#                 else:
-#                     writer_queue.put(result)
-        
-        
-#         print(len(tasks), "tasks to do.")
-
-#         writer_queue.put(_SENTINEL_KILL_CONSUMERS)
-
-#     return test_results
 
 
 async def run_full_tests(
