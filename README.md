@@ -15,5 +15,5 @@ And with different models (cf benchmark below).
 
 We also implement LLM-judge evaluation, with parallel processing for faster results.
 
-![benchmark](aggregate_score_vs_langchain.png)
+![benchmark](figures/aggregate_score_vs_langchain.png)
 
