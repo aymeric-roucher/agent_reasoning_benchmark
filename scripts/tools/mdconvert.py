@@ -655,8 +655,6 @@ class MarkdownConverter:
             for converter in self._page_converters:
                 _kwargs = copy.deepcopy(kwargs)
                 _kwargs.update({"file_extension": ext})
-
-
                 # If we hit an error log it and keep trying
                 try:
                     res = converter.convert(local_path, **_kwargs)

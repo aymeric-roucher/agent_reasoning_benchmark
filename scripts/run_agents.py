@@ -32,10 +32,10 @@ async def arun_agent(
     **kwargs
 ) -> dict:
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    question = example["question"]
+    augmented_question = example["augmented_question"]
     try:
         # run executor agent
-        response = await agent_call_function(agent_executor, question, **kwargs)
+        response = await agent_call_function(agent_executor, augmented_question, **kwargs)
 
         # check for parsing errors which indicate the LLM failed to follow the ReACT format
         # this could be due to an issue with the tool calling format or ReACT formatting (i.e. Thought, Action, Observation, etc.)
@@ -59,7 +59,7 @@ async def arun_agent(
         raised_exception = False
 
     except (ValueError, ToolException) as e:
-        print("Error on ", question, e)
+        print("Error on ", augmented_question, e)
         response = {"output": None, "intermediate_steps": None}
         parsing_error = False
         iteration_limit_exceeded = False
@@ -69,7 +69,8 @@ async def arun_agent(
     intermediate_steps = response["intermediate_steps"]
     annotated_example = {
         "agent_name": agent_name,
-        "question": question,
+        "question": example['question'],
+        "augmented_question": augmented_question,
         "prediction": response["output"],
         "intermediate_steps": intermediate_steps,
         "parsing_error": parsing_error,
@@ -175,7 +176,8 @@ async def answer_questions(
     agent_name: str,
     output_folder: str = "output",
     agent_call_function: Callable = call_langchain_agent,
-    use_attached_files: bool = False
+    visual_inspection_tool: Tool = None,
+    text_inspector_tool: Tool = None,
 ) -> List[Dict[str, Any]]:
     """
     Evaluates the agent on a given dataset.
@@ -203,29 +205,45 @@ async def answer_questions(
     results_df = pd.DataFrame(results)
 
     for _, example in tqdm(enumerate(dataset), total=len(dataset)):
+        if len(results_df) > 0:
+            if example["question"] in results_df["question"].unique() or "what is the difference to 3 decimal places in the sample standard deviations of the number of Reference Works" in example["question"]:
+                continue
+
         prompt_use_files = ""
-        if use_attached_files:
-            if example['file_name']:
-                prompt_use_files += f"To answer the question above, you will have to use these attached files:"
-                if example['file_name'].split('.')[-1] in ['pdf', 'xlsx']:
-                    image_path = example['file_name'].split('.')[0] + '.png'
-                    if os.path.exists(image_path):
-                        prompt_use_files += f"\nAttached image: {image_path}"
-                    else:
-                        prompt_use_files += f"\nAttached file: {example['file_name']}"
-                elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
-                    prompt_use_files += f"\nAttached image: {example['file_name']}"
-                elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
-                    prompt_use_files += f"\nAttached audio: {example['file_name']}"
+        if example['file_name']:
+            prompt_use_files += f"\nTo answer the question above, you will have to use these attached files:"
+            if example['file_name'].split('.')[-1] in ['pdf', 'xlsx']:
+                image_path = example['file_name'].split('.')[0] + '.png'
+                if os.path.exists(image_path):
+                    prompt_use_files += f"\nAttached image: {image_path}"
                 else:
                     prompt_use_files += f"\nAttached file: {example['file_name']}"
+            elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
+                prompt_use_files += f"\nAttached image: {example['file_name']}"
+            elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
+                prompt_use_files += f"\nAttached audio: {example['file_name']}"
             else:
-                prompt_use_files += "\nYou have been given no local files to access."
-            example['question'] = example['question'] + prompt_use_files
+                prompt_use_files += f"\nAttached file: {example['file_name']}"
 
-        if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique():
-                continue
+            if example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg'] and visual_inspection_tool is not None:
+                prompt = f"""Write a caption of 5 sentences maximum for this image. Pay special attention to any details that might be useful for someone answering the following:
+{example['question']}
+
+Do not add any information that is not present in the image.
+""".strip()
+                prompt_use_files += "\nDescription of this image: " + visual_inspection_tool(image_path=example['file_name'], question=prompt)
+            elif '.zip' not in example['file_name'] and text_inspector_tool is not None:
+                prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following:
+{example['question']}
+
+Do not add any information that is not present in the file.
+""".strip()
+                prompt_use_files += "\nDescription of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt)
+            print("PROMPT USE FILES:", prompt_use_files)
+        else:
+            prompt_use_files += "\nYou have been given no local files to access."
+        example['augmented_question'] = example['question'] + prompt_use_files
+
         # run agent
         result = await arun_agent(
             example=example,

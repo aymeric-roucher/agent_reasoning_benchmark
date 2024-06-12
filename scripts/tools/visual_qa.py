@@ -4,9 +4,12 @@ from io import BytesIO
 import json
 import os
 import requests
-
+from typing import Optional
 from huggingface_hub import InferenceClient
 from transformers import AutoProcessor, Tool
+import uuid
+import mimetypes
+
 
 idefics_processor = AutoProcessor.from_pretrained("HuggingFaceM4/idefics2-8b")
 
@@ -54,15 +57,37 @@ def process_images_and_text(image_path, query, client):
 
     return json.loads(client.post(json=payload).decode())[0]
 
-
 # Function to encode the image
 def encode_image(image_path):
-  with open(image_path, "rb") as image_file:
-    return base64.b64encode(image_file.read()).decode('utf-8')
+    if image_path.startswith("http"):
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
+        request_kwargs = {
+            "headers": {"User-Agent": user_agent},
+            "stream": True,
+        }
+
+        # Send a HTTP request to the URL
+        response = requests.get(image_path, **request_kwargs)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+
+        extension = mimetypes.guess_extension(content_type)
+        if extension is None:
+            extension = ".download"
+    
+        fname = str(uuid.uuid4()) + extension
+        download_path = os.path.abspath(os.path.join("downloads", fname))
+
+        with open(download_path, "wb") as fh:
+            for chunk in response.iter_content(chunk_size=512):
+                fh.write(chunk)
+
+    with open(download_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 headers = {
-  "Content-Type": "application/json",
-  "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
 }
 
 
@@ -89,15 +114,23 @@ class VisualQATool(Tool):
 
     client = InferenceClient("HuggingFaceM4/idefics2-8b-chatty")
 
-    def forward(self, question: str, image_path: str) -> str:
+    def forward(self, image_path: str, question: Optional[str] = None) -> str:
+        add_note = False
+        if not question:
+            add_note = True
+            question = "Please write a detailed caption for this image."
         try:
-            return process_images_and_text(image_path, question, self.client)
+            output = process_images_and_text(image_path, question, self.client)
         except Exception as e:
             print(e)
             if "Payload Too Large" in str(e):
                 new_image_path = resize_image(image_path)
-                return process_images_and_text(new_image_path, question, self.client)
+                output = process_images_and_text(new_image_path, question, self.client)
 
+        if add_note:
+            output = f"You did not provide a particular question, so here is a detailed caption for the image: {output}"
+
+        return output
 
 class VisualQAGPT4Tool(Tool):
     name = "visualizer"
@@ -111,7 +144,13 @@ class VisualQAGPT4Tool(Tool):
     }
     output_type = "text"
 
-    def forward(self, question: str, image_path: str) -> str:
+    def forward(self, image_path: str, question: Optional[str] = None) -> str:
+        add_note = False
+        if not question:
+            add_note = True
+            question = "Please write a detailed caption for this image."
+
+
         base64_image = encode_image(image_path)
 
         payload = {
@@ -133,9 +172,13 @@ class VisualQAGPT4Tool(Tool):
                 ]
                 }
             ],
-            "max_tokens": 300
+            "max_tokens": 500
         }
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-        return response.json()['choices'][0]['message']['content']
+        output = response.json()['choices'][0]['message']['content']
 
+        if add_note:
+            output = f"You did not provide a particular question, so here is a detailed caption for the image: {output}"
+
+        return output
 

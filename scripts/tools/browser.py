@@ -29,6 +29,8 @@ class SimpleTextBrowser:
     ):
         self.start_page: str = start_page if start_page else "about:blank"
         self.viewport_size = viewport_size  # Applies only to the standard uri types
+        if not downloads_folder:
+            downloads_folder = os.path.join(os.getcwd(), "downloads")
         self.downloads_folder = downloads_folder
         self.history: List[Tuple[str, float]] = list()
         self.page_title: Optional[str] = None
