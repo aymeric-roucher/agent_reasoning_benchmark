@@ -82,7 +82,9 @@ def encode_image(image_path):
             for chunk in response.iter_content(chunk_size=512):
                 fh.write(chunk)
 
-    with open(download_path, "rb") as image_file:
+        image_path = download_path
+
+    with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 headers = {

@@ -170,6 +170,7 @@ def serialize_agent_error(obj):
     else:
         return str(obj)
 
+
 async def answer_questions(
     dataset: Dataset,
     agent: AgentExecutor,
@@ -206,7 +207,7 @@ async def answer_questions(
 
     for _, example in tqdm(enumerate(dataset), total=len(dataset)):
         if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique() or "what is the difference to 3 decimal places in the sample standard deviations of the number of Reference Works" in example["question"]:
+            if example["question"] in results_df["question"].unique():
                 continue
 
         prompt_use_files = ""
@@ -218,6 +219,31 @@ async def answer_questions(
                     prompt_use_files += f"\nAttached image: {image_path}"
                 else:
                     prompt_use_files += f"\nAttached file: {example['file_name']}"
+            elif example['file_name'].split('.')[-1] == "zip":
+                import shutil
+
+                folder_name = example['file_name'].replace(".zip", "")
+                os.makedirs(folder_name, exist_ok=True)
+                shutil.unpack_archive(example['file_name'], folder_name)
+
+                # Convert the extracted files
+                prompt_use_files = "\nYou have been given a zip archive of supporting files. We extracted it into a directory: find the extracted files at the following paths:\n"
+                for root, dirs, files in os.walk(folder_name):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        prompt_use_files += f"- {file_path}\n"
+                        if file.split('.')[-1] in ['png', 'jpg', 'jpeg'] and visual_inspection_tool is not None:
+                            prompt = f"""Write a caption of 5 sentences maximum for this image. Pay special attention to any details that might be useful for someone answering the following question:
+{example['question']}. But do not try to answer the question directly!
+Do not add any information that is not present in the image.
+""".strip()
+                            prompt_use_files += "Description of this image: " + visual_inspection_tool(image_path=file_path, question=prompt) + '\n\n'
+                        else:
+                            prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following question:
+{example['question']}. But do not try to answer the question directly!
+Do not add any information that is not present in the file.
+""".strip()
+                            prompt_use_files += "Description of this file: " + text_inspector_tool(file_path=file_path, question=prompt, initial_exam_mode=True) + '\n\n'
             elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
                 prompt_use_files += f"\nAttached image: {example['file_name']}"
             elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
@@ -226,20 +252,17 @@ async def answer_questions(
                 prompt_use_files += f"\nAttached file: {example['file_name']}"
 
             if example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg'] and visual_inspection_tool is not None:
-                prompt = f"""Write a caption of 5 sentences maximum for this image. Pay special attention to any details that might be useful for someone answering the following:
-{example['question']}
-
+                prompt = f"""Write a caption of 5 sentences maximum for this image. Pay special attention to any details that might be useful for someone answering the following question:
+{example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the image.
 """.strip()
                 prompt_use_files += "\nDescription of this image: " + visual_inspection_tool(image_path=example['file_name'], question=prompt)
             elif '.zip' not in example['file_name'] and text_inspector_tool is not None:
-                prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following:
-{example['question']}
-
+                prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following question:
+{example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the file.
 """.strip()
-                prompt_use_files += "\nDescription of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt)
-            print("PROMPT USE FILES:", prompt_use_files)
+                prompt_use_files += "\nDescription of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt, initial_exam_mode=True)
         else:
             prompt_use_files += "\nYou have been given no local files to access."
         example['augmented_question'] = example['question'] + prompt_use_files

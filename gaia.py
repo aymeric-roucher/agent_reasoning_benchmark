@@ -9,6 +9,7 @@ OUTPUT_DIR = "output_gaia"
 
 from huggingface_hub import login
 import os
+from typing import Optional
 
 login(os.getenv("HUGGINGFACEHUB_API_TOKEN"))
 
@@ -21,6 +22,7 @@ from scripts.tools.web_surfer import (
     PageDownTool,
     FinderTool,
     FindNextTool,
+    ArchiveSearchTool,
     browser,
 )
 from scripts.tools.mdconvert import MarkdownConverter
@@ -33,11 +35,12 @@ from transformers.agents import ReactCodeAgent, HfEngine
 from transformers.agents.prompts import DEFAULT_REACT_CODE_SYSTEM_PROMPT, DEFAULT_REACT_JSON_SYSTEM_PROMPT
 from transformers.agents.default_tools import Tool
 from scripts.tools.visual_qa import VisualQATool, VisualQAGPT4Tool
-from transformers.agents import SpeechToTextTool, PythonInterpreterTool
-import shutil
+from transformers.agents import PythonInterpreterTool
 import asyncio
 
 ### IMPORTANT: EVALUATION SWITCHES
+
+print("Make sure you deactivated Tailsacale VPN, else some URLs will be blocked!")
 
 USE_OS_MODELS = False
 USE_JSON_AGENT = False
@@ -63,6 +66,7 @@ class OpenAIModel:
             model=self.model_name,
             messages=messages,
             stop=stop_sequences,
+            temperature=0.5
         )
         return response.choices[0].message.content
 
@@ -84,10 +88,6 @@ eval_ds = eval_ds.rename_columns(
 def preprocess_file_paths(row):
     if len(row["file_name"]) > 0:
         row["file_name"] = "data/gaia/validation/" + row["file_name"]
-
-    replaced_name = row["file_name"].replace(".xlsx", ".png").replace('.pdf', '.png')
-    if os.path.exists(replaced_name):
-        row["file_name"] = replaced_name
     return row
 
 
@@ -119,6 +119,7 @@ WEB_TOOLS = [
     PageDownTool(),
     FinderTool(),
     FindNextTool(),
+    ArchiveSearchTool(),
 ]
 
 class TextInspectorTool(Tool):
@@ -129,7 +130,7 @@ This tool handles the following file extensions: [".html", ".htm", ".xlsx", ".pp
 
     inputs = {
         "question": {
-            "description": "Your question, as a natural language sentence. Provide as much context as possible.",
+            "description": "[Optional]: Your question, as a natural language sentence. Provide as much context as possible. Do not pass this parameter if you just want to directly return the content of the file.",
             "type": "text",
         },
         "file_path": {
@@ -140,36 +141,56 @@ This tool handles the following file extensions: [".html", ".htm", ".xlsx", ".pp
     output_type = "text"
     md_converter = MarkdownConverter()
 
-    def forward(self, question: str, file_path) -> str:
+    def forward(self, file_path, question: Optional[str] = None, initial_exam_mode: Optional[bool] = False) -> str:
 
         result = self.md_converter.convert(file_path)
 
         if ".zip" in file_path:
             return result.text_content
-
-        messages = [
-            {
-                "role": "user",
-                "content": "You will have to write a short caption for this file, then answer this question:"
-                + question,
-            },
-            {
-                "role": "user",
-                "content": "Here is the complete file:\n### "
-                + str(result.title)
-                + "\n\n"
-                + result.text_content[:70000],
-            },
-            {
-                "role": "user",
-                "content": "Now write a short caption for the file, then answer this question:"
-                + question,
-            },
-        ]
-        return websurfer_llm_engine(messages)
+        
+        if not question:
+            return result.text_content
+        
+        if initial_exam_mode:
+            messages = [
+                {
+                    "role": "user",
+                    "content": "Here is a file:\n### "
+                    + str(result.title)
+                    + "\n\n"
+                    + result.text_content[:70000],
+                },
+                {
+                    "role": "user",
+                    "content": question,
+                },
+            ]
+            return websurfer_llm_engine(messages)
+        else:
+            messages = [
+                {
+                    "role": "user",
+                    "content": "You will have to write a short caption for this file, then answer this question:"
+                    + question,
+                },
+                {
+                    "role": "user",
+                    "content": "Here is the complete file:\n### "
+                    + str(result.title)
+                    + "\n\n"
+                    + result.text_content[:70000],
+                },
+                {
+                    "role": "user",
+                    "content": "Now write a short caption for the file, then answer this question:"
+                    + question,
+                },
+            ]
+            return websurfer_llm_engine(messages)
 
 
 ti_tool_search = TextInspectorTool()
+
 ti_tool_search.description = """
 Call this tool to read a downloaded file as markdown text and ask questions about it.
 This tool handles the following file extensions: [".html", ".htm", ".xlsx", ".pptx", ".wav", ".mp3", ".flac", ".pdf", ".docx"], and all other types of text files. IT DOES NOT HANDLE IMAGES."""
@@ -183,6 +204,7 @@ surfer_agent = ReactJsonAgent(
     max_iterations=12,
     verbose=1,
     system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT + "\nAdditionally, if after some searching you find out that you need more information to answer the question, you can use `final_answer` with your request for clarification as argument to request for more information.",
+    planning_interval=4,
 )
 
 
@@ -195,7 +217,12 @@ params = {
 
 class SearchTool(Tool):
     name = "ask_search_agent"
-    description = "A search agent that will browse the internet to answer your question. Ask him for all your web-search related questions, but he's unable to do problem-solving. Provide him as much context as possible, in particular if you need to search on a specific timeframe!"
+    description = """
+This will send a message to a team member that will browse the internet to answer your question.
+Ask him for all your web-search related questions, but he's unable to do problem-solving.
+Provide him as much context as possible, in particular if you need to search on a specific timeframe!
+And don't hesitate to provide them with a complex search task, like finding a difference between two webpages.
+"""
 
     inputs = {
         "query": {
@@ -206,32 +233,22 @@ class SearchTool(Tool):
     output_type = "text"
 
     def forward(self, query: str) -> str:
-        return surfer_agent.run(f"You've been submitted this request by your manager: {query}\nYou're solving the task for your manager: so even if your search is unsuccessful, please return as much context as possible, so they can act upon this feedback. Also, if the answer to the task is on an image or pdf file, you can download it to inspect it. If you do not succeed to inspect it, you can return the path where the file was downloaded, and your manager will handle it from there.")
+        return surfer_agent.run(f"""
+You've been submitted this request by your manager: '{query}'
 
+You're helping your manager solve a wider task: so make sure to not provide a one-line answer, but give as much information as possible so that they have a clear understanding of the answer.
 
-class ZipInspectorTool(Tool):
-    name = "extract_inspect_zip_folder"
-    description = "Use this to extract and inspect the contents of a zip folder."
-    inputs = {
-        "folder": {
-            "description": "The path to the zip folder you want to inspect.",
-            "type": "text",
-        }
-    }
-    output_type = "text"
+Your final_answer WILL HAVE to contain these parts:
+# 1. Search outcome (short version)
+# 2. Search outcome (extremely detailed version)
+# 3. Additional context
 
-    def forward(self, folder: str) -> str:
-        folder_name = folder.replace(".zip", "")
-        os.makedirs(folder_name, exist_ok=True)
-        shutil.unpack_archive(folder, folder_name)
+Put all these in your final_answer, everything that you do not pass as an argument to final_answer will be lost.
 
-        # Convert the extracted files
-        result = "We extracted all files from the zip into a directory: find the extracted files at the following paths:\n"
-        for root, dirs, files in os.walk(folder_name):
-            for file in files:
-                result += f"- {os.path.join(root, file)}\n"
+And even if your search is unsuccessful, please return as much context as possible, so they can act upon this feedback.
+Also, if the answer to the task is on an image or pdf file, you can download it to inspect it. If you do not succeed to inspect it, you can return the path where the file was downloaded, and your manager will handle it from there.
+""")
 
-        return result
 
 ti_tool = TextInspectorTool()
 
@@ -239,7 +256,6 @@ TASK_SOLVING_TOOLBOX = [
     SearchTool(),
     VisualQAGPT4Tool(),  # VisualQATool(),
     ti_tool,
-    ZipInspectorTool(),
 ]
 
 
@@ -267,7 +283,8 @@ else:
         verbose=0,
         memory_verbose=True,
         system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
-        additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "json", "bs4"],
+        additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
+        planning_interval=2
     )
 
 ### EVALUATE
@@ -296,9 +313,9 @@ food_file = "data/gaia/validation/9b54f9d9-35ee-4a14-b62f-d130ea00317f/food_dupl
 results = asyncio.run(answer_questions(
     eval_ds,
     react_agent,
-    "react_code_gpt4o_12-june_planning3_initial-file-inspection",
+    "react_code_gpt4o_17-june_planning2_replan_summary",
     output_folder=OUTPUT_DIR,
     agent_call_function=call_transformers,
     visual_inspection_tool = VisualQAGPT4Tool(),
-    text_inspector_tool = ti_tool,
+    text_inspector_tool = ti_tool_search,
 ))

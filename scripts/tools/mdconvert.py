@@ -325,7 +325,8 @@ class XlsxConverter(HtmlConverter):
     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
         # Bail if not a XLSX
         extension = kwargs.get("file_extension", "")
-        if extension.lower() != ".xlsx":
+
+        if extension.lower() not in [".xlsx", ".xls"]:
             return None
 
         sheets = pd.read_excel(local_path, sheet_name=None)
@@ -339,7 +340,64 @@ class XlsxConverter(HtmlConverter):
             title=None,
             text_content=md_content.strip(),
         )
+
+
+import xml.etree.ElementTree as ET
+class XmlConverter(DocumentConverter):
+    def convert(self, local_path, **kwargs) -> None | DocumentConverterResult:
+        # Parse the XML string
+        extension = kwargs.get("file_extension", "")
+
+        if extension.lower() not in [".xml"]:
+            return None
         
+        xml_string = ""
+        with open(local_path, "rt") as fh:
+            xml_string = fh.read()
+        
+        def extract_table_from_html_like(xml_root):
+            table = xml_root.find('.//table')
+            if table is None:
+                raise ValueError("No table found in the XML")
+
+            headers = [th.text for th in table.find('thead').findall('th')]
+            rows = [[td.text for td in tr.findall('td')] for tr in table.find('tbody').findall('tr')]
+            
+            # Create markdown table
+            markdown = '| ' + ' | '.join(headers) + ' |\n'
+            markdown += '| ' + ' | '.join(['---'] * len(headers)) + ' |\n'
+            for row in rows:
+                markdown += '| ' + ' | '.join(row) + ' |\n'
+
+        def extract_table_from_wordml(xml_root, namespaces):
+            # Parse the XML content
+            root = xml_root
+            namespace = {'w': 'http://schemas.microsoft.com/office/word/2003/wordml'}
+            
+            # Extract text content
+            body = root.find('w:body', namespace)
+            paragraphs = body.findall('.//w:p', namespace)
+            text_content = []
+            for para in paragraphs:
+                texts = para.findall('.//w:t', namespace)
+                for text in texts:
+                    text_content.append(text.text)
+            
+            return '\n'.join(text_content)
+
+        # Parse the XML string
+        root = ET.fromstring(xml_string)
+        namespaces = {'w': 'http://schemas.microsoft.com/office/word/2003/wordml'}
+        
+        if root.tag.endswith('wordDocument'):
+            markdown = extract_table_from_wordml(root, namespaces)
+        else:
+            markdown = extract_table_from_html_like(root)
+
+        return DocumentConverterResult(
+            title=None,
+            text_content=markdown.strip(),
+        )
 
 class PptxConverter(HtmlConverter):
     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
@@ -553,9 +611,9 @@ class MarkdownConverter:
         # Register converters for successful browsing operations
         # Later registrations are tried first / take higher priority than earlier registrations
         # To this end, the most specific converters should appear below the most generic converters
-        self.register_page_converter(PlainTextConverter())
         self.register_page_converter(HtmlConverter())
         self.register_page_converter(WikipediaConverter())
+        self.register_page_converter(XmlConverter())
         self.register_page_converter(YouTubeConverter())
         self.register_page_converter(DocxConverter())
         self.register_page_converter(XlsxConverter())
@@ -563,6 +621,7 @@ class MarkdownConverter:
         # self.register_page_converter(ImageConverter())
         self.register_page_converter(PdfConverter())
         self.register_page_converter(AudioConverter())
+        self.register_page_converter(PlainTextConverter())
 
     def convert(self, source, **kwargs):
         """
@@ -622,7 +681,6 @@ class MarkdownConverter:
 
         # Save the file locally to a temporary file. It will be deleted before this method exits
         handle, temp_path = tempfile.mkstemp()
-        print("CREATING FILE:", temp_path)
         fh = os.fdopen(handle, "wb")
         result = None
         try:
@@ -657,6 +715,7 @@ class MarkdownConverter:
                 _kwargs.update({"file_extension": ext})
                 # If we hit an error log it and keep trying
                 try:
+                    print(converter)
                     res = converter.convert(local_path, **_kwargs)
                     if res is not None:
                         # Normalize the content
@@ -712,4 +771,4 @@ class MarkdownConverter:
 
     def register_page_converter(self, converter: DocumentConverter) -> None:
         """Register a page text converter."""
-        self._page_converters.insert(0, converter)
+        self._page_converters.append(converter)

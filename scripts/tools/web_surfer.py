@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 import requests
 from pypdf import PdfReader
 from markdownify import markdownify as md
-
+import mimetypes
 
 USE_SERPAPI_BROWSER = True
 
@@ -126,7 +126,6 @@ def extract_text_from_pdf(pdf_path):
         text += page.extract_text()
     return md(text)
 
-
 class DownloadTool(Tool):
     name="download_file"
     description="Download a file at a given URL and return its text. Use this to inspect a PDF or text file."
@@ -137,16 +136,18 @@ class DownloadTool(Tool):
         if "arxiv" in url:
             url = url.replace("abs", "pdf")
         response = requests.get(url)
-        if "pdf" in url:
-            new_path = "/tmp/metadata.pdf"
+        content_type = response.headers.get("content-type", "")
+        extension = mimetypes.guess_extension(content_type)
+        if extension and isinstance(extension, str) and "pdf" in extension:
+            new_path = "./downloads/file.pdf"
         else:
-            new_path = "/tmp/metadata.txt"
+            new_path = "./downloads/file.txt"
 
         with open(new_path, "wb") as f:
             f.write(response.content)
 
         text = f"File was downloaded and saved under path {new_path}. File content: \n\n"
-        if "pdf" in url:
+        if "pdf" in extension:
             text += extract_text_from_pdf(new_path)
         else:
             with open(new_path, "r") as f:
@@ -163,10 +164,31 @@ class PageUpTool(Tool):
     description="Scroll the viewport UP one page-length in the current webpage and return the new viewport content."
     output_type = "text"
 
-    def forward(self, ) -> str:
+    def forward(self) -> str:
         browser.page_up()
         header, content = _browser_state()
         return header.strip() + "\n=======================\n" + content
+
+class ArchiveSearchTool(Tool):
+    name="find_archived_url"
+    description="Given a url, searches the Wayback Machine and returns the archived version of the url that's closest in time to the desired date."
+    inputs={
+        "url": {"type": "text", "description": "The url you need the archive for."},
+        "date": {"type": "text", "description": "The date that you want to find the archive for. Give this date in the format 'YYYYMMDD', for instance '27 June 2008' is written as '20080627'."}
+    }
+    output_type = "text"
+
+    def forward(self, url, date) -> str:
+        archive_url = f"https://archive.org/wayback/available?url={url}&timestamp={date}"
+        response = requests.get(archive_url).json()
+        try:
+            closest = response["archived_snapshots"]["closest"]
+        except:
+            raise Exception(f"Your url was not archived on Wayback Machine, try a different url.")
+        target_url = closest["url"]
+        browser.visit_page(target_url)
+        header, content = _browser_state()
+        return f"Web archive for url {url}, snapshot taken at date {closest['timestamp'][:8]}:\n" + header.strip() + "\n=======================\n" + content
 
 
 class PageDownTool(Tool):

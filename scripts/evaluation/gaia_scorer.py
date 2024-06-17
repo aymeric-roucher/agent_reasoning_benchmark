@@ -95,7 +95,7 @@ def check_close_call(prediction, true_answer, is_correct):
         if is_float(true_answer):
             return is_correct
         else:
-            if check_prediction_contains_answer_letters_in_order(str(prediction), str(true_answer)):
+            if check_prediction_contains_answer_letters_in_order(str(prediction), str(true_answer)) and len(str(true_answer)) * 0.7 <= len(str(prediction)) <= len(str(true_answer))*1.5:
                 print(f"Close call: {prediction} vs {true_answer}")
                 return True
             else:
