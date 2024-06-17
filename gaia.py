@@ -114,7 +114,6 @@ WEB_TOOLS = [
     SearchInformationTool(),
     NavigationalSearchTool(),
     VisitTool(),
-    DownloadTool(),
     PageUpTool(),
     PageDownTool(),
     FinderTool(),
@@ -189,19 +188,10 @@ This tool handles the following file extensions: [".html", ".htm", ".xlsx", ".pp
             return websurfer_llm_engine(messages)
 
 
-ti_tool_search = TextInspectorTool()
-
-ti_tool_search.description = """
-Call this tool to read a downloaded file as markdown text and ask questions about it.
-This tool handles the following file extensions: [".html", ".htm", ".xlsx", ".pptx", ".wav", ".mp3", ".flac", ".pdf", ".docx"], and all other types of text files. IT DOES NOT HANDLE IMAGES."""
-
-WEB_TOOLS.append(ti_tool_search)
-
-
 surfer_agent = ReactJsonAgent(
     llm_engine=websurfer_llm_engine,
     tools=WEB_TOOLS,
-    max_iterations=12,
+    max_iterations=14,
     verbose=1,
     system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT + "\nAdditionally, if after some searching you find out that you need more information to answer the question, you can use `final_answer` with your request for clarification as argument to request for more information.",
     planning_interval=4,
@@ -214,7 +204,7 @@ params = {
     "hl": "en",
 }
 
-
+import json
 class SearchTool(Tool):
     name = "ask_search_agent"
     description = """
@@ -233,7 +223,7 @@ And don't hesitate to provide them with a complex search task, like finding a di
     output_type = "text"
 
     def forward(self, query: str) -> str:
-        return surfer_agent.run(f"""
+        final_answer = surfer_agent.run(f"""
 You've been submitted this request by your manager: '{query}'
 
 You're helping your manager solve a wider task: so make sure to not provide a one-line answer, but give as much information as possible so that they have a clear understanding of the answer.
@@ -245,9 +235,30 @@ Your final_answer WILL HAVE to contain these parts:
 
 Put all these in your final_answer, everything that you do not pass as an argument to final_answer will be lost.
 
+You can navigate to .txt or .pdf online files using your 'visit_page' tool.
+If it's another format, you can return the url of the file, and your manager will handle the download and inspection from there.
+
 And even if your search is unsuccessful, please return as much context as possible, so they can act upon this feedback.
-Also, if the answer to the task is on an image or pdf file, you can download it to inspect it. If you do not succeed to inspect it, you can return the path where the file was downloaded, and your manager will handle it from there.
 """)
+        answer = "Here is the report from your team member's search:\n"
+        for message in surfer_agent.write_inner_memory_from_logs(summary_mode=True):
+            content = message['content']
+            if 'tool_arguments' in str(content):
+                if len(str(content)) < 1000:
+                    answer += "Tool call: " + str(content) + "\n"
+                else:
+                    try:
+                        answer += f"Tool call: {json.loads(content)['tool_name']}\n"
+                    except:
+                        answer += f"Tool call: {content[:1000]}\n"
+            else:
+                if len(str(content)) > 1000:
+                    answer += "Tool output too long to show.\n"
+                else:
+                    answer += str(content) + "\n"
+        answer += "\nNow here is the team member's final answer deducted from the above:\n"
+        answer += final_answer
+        return answer
 
 
 ti_tool = TextInspectorTool()
@@ -257,7 +268,6 @@ TASK_SOLVING_TOOLBOX = [
     VisualQAGPT4Tool(),  # VisualQATool(),
     ti_tool,
 ]
-
 
 if USE_JSON_AGENT:
     TASK_SOLVING_TOOLBOX.append(PythonInterpreterTool())
@@ -283,7 +293,7 @@ else:
         verbose=0,
         memory_verbose=True,
         system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
-        additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
+        additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
         planning_interval=2
     )
 
@@ -293,10 +303,11 @@ from scripts.reformulator import prepare_response
 
 async def call_transformers(agent, question: str, **kwargs) -> str:
     result = agent.run(question, **kwargs)
-    agent_memory = agent.write_inner_memory_from_logs()[1:]
+    agent_memory = agent.write_inner_memory_from_logs(summary_mode=True)
     try:
         final_result = prepare_response(question, agent_memory, llm_engine)
     except Exception as e:
+        print(e)
         final_result = result
     return {
         "output": str(final_result),
@@ -317,5 +328,5 @@ results = asyncio.run(answer_questions(
     output_folder=OUTPUT_DIR,
     agent_call_function=call_transformers,
     visual_inspection_tool = VisualQAGPT4Tool(),
-    text_inspector_tool = ti_tool_search,
+    text_inspector_tool = ti_tool,
 ))

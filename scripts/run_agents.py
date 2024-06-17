@@ -207,7 +207,7 @@ async def answer_questions(
 
     for _, example in tqdm(enumerate(dataset), total=len(dataset)):
         if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique():
+            if example["question"] in results_df["question"].unique() or "ve got a Boggle board here" in example['question']:
                 continue
 
         prompt_use_files = ""

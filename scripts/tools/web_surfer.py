@@ -97,7 +97,7 @@ class NavigationalSearchTool(Tool):
         else:
             browser.visit_page(f"bing: {query}")
 
-        # Extract the first linl
+        # Extract the first line
         m = re.search(r"\[.*?\]\((http.*?)\)", browser.page_content)
         if m:
             browser.visit_page(m.group(1))
@@ -109,7 +109,7 @@ class NavigationalSearchTool(Tool):
 
 class VisitTool(Tool):
     name="visit_page"
-    description="Visit a webpage at a given URL and return its text. This will not work is the page is a pdf or txt: in that case, use the download_file tool instead."
+    description="Visit a webpage at a given URL and return its text."
     inputs = {"url": {"type": "text", "description": "The relative or absolute url of the webapge to visit."}}
     output_type = "text"
 
@@ -119,16 +119,12 @@ class VisitTool(Tool):
         return header.strip() + "\n=======================\n" + content
 
 
-def extract_text_from_pdf(pdf_path):
-    pdf = PdfReader(pdf_path)
-    text = ""
-    for page in pdf.pages:
-        text += page.extract_text()
-    return md(text)
-
 class DownloadTool(Tool):
     name="download_file"
-    description="Download a file at a given URL and return its text. Use this to inspect a PDF or text file."
+    description="""
+Download a file at a given URL. The file should be of this format: [".xlsx", ".pptx", ".wav", ".mp3", ".png", ".docx"]
+After using this tool, for further inspection of this page you should return the download path to your manager via final_answer, and they will be able to inspect it.
+DO NOT use this tool for .pdf or .txt or .htm files: for these types of files use visit_page with the file url instead."""
     inputs = {"url": {"type": "text", "description": "The relative or absolute url of the file to be downloaded."}}
     output_type = "text"
 
@@ -138,25 +134,18 @@ class DownloadTool(Tool):
         response = requests.get(url)
         content_type = response.headers.get("content-type", "")
         extension = mimetypes.guess_extension(content_type)
-        if extension and isinstance(extension, str) and "pdf" in extension:
-            new_path = "./downloads/file.pdf"
+        if extension and isinstance(extension, str):
+            new_path = f"./downloads/file{extension}"
         else:
-            new_path = "./downloads/file.txt"
+            new_path = "./downloads/file.object"
 
         with open(new_path, "wb") as f:
             f.write(response.content)
 
-        text = f"File was downloaded and saved under path {new_path}. File content: \n\n"
-        if "pdf" in extension:
-            text += extract_text_from_pdf(new_path)
-        else:
-            with open(new_path, "r") as f:
-                while True:
-                    line = f.readline()
-                    if (not line) or (len(text) > 20000):
-                        break
-                    text += line
-        return text
+        if "pdf" in extension or "txt" in extension or "htm" in extension:
+            raise Exception("Do not use this tool for pdf or txt or html files: use visit_page instead.")
+
+        return f"File was downloaded and saved under path {new_path}."
     
 
 class PageUpTool(Tool):

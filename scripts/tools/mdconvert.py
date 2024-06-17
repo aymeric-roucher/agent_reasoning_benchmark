@@ -485,107 +485,6 @@ class PptxConverter(HtmlConverter):
             return True
         return False
 
-# visual_qa_tool = VisualQAGPT4Tool()
-
-# class ImageConverter(DocumentConverter):
-#     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
-#         extension = kwargs.get("file_extension", "")
-#         if extension.lower() not in [".jpg", ".jpeg", ".png"]:
-#             raise Exception(f"Unsupported format: {extension}")
-
-#         ocr_min_confidence = kwargs.get("ocr_min_confidence", 0.25)
-
-#         md_content = ""
-
-#         # Add metadata
-#         metadata = self._get_metadata(local_path)
-#         if metadata:
-#             for f in [
-#                 "Title",
-#                 "Caption",
-#                 "Description",
-#                 "Keywords",
-#                 "Artist",
-#                 "DateTimeOriginal",
-#                 "CreateDate",
-#                 "GPSPosition",
-#             ]:
-#                 if f in metadata:
-#                     md_content += f"{f}: {metadata[f]}\n"
-
-#         # Try describing the image with GPTV
-#         md_content += (
-#             "\n# Description:\n"
-#             + visual_qa_tool(local_path, extension, prompt=kwargs.get("mlm_prompt")).strip()
-#             + "\n"
-#         )
-
-#         image = PIL.Image.open(local_path)
-#         # Remove transparency
-#         if image.mode in ("RGBA", "P"):
-#             image = image.convert("RGB")
-
-#         reader = easyocr.Reader(["en"])  # specify the language(s)
-#         output = reader.readtext(np.array(image))  # local_path)
-#         # The output is a list of tuples, each containing the coordinates of the text and the text itself.
-#         # We join all the text pieces together to get the final text.
-#         ocr_text = " "
-#         for item in output:
-#             if item[2] >= ocr_min_confidence:
-#                 ocr_text += item[1] + " "
-#         ocr_text = ocr_text.strip()
-
-#         if len(ocr_text) > 0:
-#             md_content += "\n# Text detected by OCR:\n" + ocr_text
-
-#         return DocumentConverterResult(
-#             title=None,
-#             text_content=md_content,
-#         )
-
-#     def _get_metadata(self, local_path):
-#         exiftool = shutil.which("exiftool")
-#         if not exiftool:
-#             return None
-#         else:
-#             try:
-#                 result = subprocess.run([exiftool, "-json", local_path], capture_output=True, text=True).stdout
-#                 return json.loads(result)[0]
-#             except:
-#                 return None
-
-#     def _get_mlm_description(self, local_path, extension, client, prompt=None):
-#         if prompt is None or prompt.strip() == "":
-#             prompt = "Write a detailed caption for this image."
-
-#         sys.stderr.write(f"MLM Prompt:\n{prompt}\n")
-
-#         data_uri = ""
-#         with open(local_path, "rb") as image_file:
-#             content_type, encoding = mimetypes.guess_type("_dummy" + extension)
-#             if content_type is None:
-#                 content_type = "image/jpeg"
-#             image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
-#             data_uri = f"data:{content_type};base64,{image_base64}"
-
-#             messages = [
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {"type": "text", "text": prompt},
-#                         {
-#                             "type": "image_url",
-#                             "image_url": {
-#                                 "url": data_uri,
-#                             },
-#                         },
-#                     ],
-#                 }
-#             ]
-
-#             response = client.create(messages=messages)
-#             return client.extract_text_or_completion_object(response)[0]
-
 class FileConversionException(Exception):
     pass
 
@@ -655,7 +554,8 @@ class MarkdownConverter:
 
     def convert_url(self, url, **kwargs):
         # Send a HTTP request to the URL
-        response = self._requests_session.get(url, stream=True)
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
+        response = self._requests_session.get(url, stream=True, headers={"User-Agent": user_agent})
         response.raise_for_status()
         return self.convert_response(response, **kwargs)
 
@@ -715,7 +615,6 @@ class MarkdownConverter:
                 _kwargs.update({"file_extension": ext})
                 # If we hit an error log it and keep trying
                 try:
-                    print(converter)
                     res = converter.convert(local_path, **_kwargs)
                     if res is not None:
                         # Normalize the content

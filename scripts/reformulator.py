@@ -18,7 +18,6 @@ Your team then worked diligently to address that request. Here is a transcript o
     #    del inner_messages[0]
 
     # copy them to this context
-    print(inner_messages)
     for message in inner_messages:
         if not message.get("content"):
             continue
