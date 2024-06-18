@@ -1,49 +1,41 @@
+import asyncio
+import os
+from openai import OpenAI
+from typing import Optional
+import json
 import pandas as pd
 from dotenv import load_dotenv
 import datasets
-
-load_dotenv(override=True)
-pd.set_option("max_colwidth", None)
-
-OUTPUT_DIR = "output_gaia"
-
 from huggingface_hub import login
-import os
-from typing import Optional
-
-login(os.getenv("HUGGINGFACEHUB_API_TOKEN"))
-
+from transformers.agents.llm_engine import MessageRole, get_clean_message_list
+from transformers.agents import ReactCodeAgent, ReactJsonAgent, HfEngine
+from transformers.agents.prompts import DEFAULT_REACT_CODE_SYSTEM_PROMPT, DEFAULT_REACT_JSON_SYSTEM_PROMPT
+from transformers.agents.default_tools import Tool
+from transformers.agents import PythonInterpreterTool
 from scripts.tools.web_surfer import (
     SearchInformationTool,
     NavigationalSearchTool,
     VisitTool,
-    DownloadTool,
     PageUpTool,
     PageDownTool,
     FinderTool,
     FindNextTool,
     ArchiveSearchTool,
-    browser,
 )
 from scripts.tools.mdconvert import MarkdownConverter
-
+from scripts.reformulator import prepare_response
 from scripts.run_agents import answer_questions
-from openai import OpenAI
-from transformers.agents.llm_engine import MessageRole, get_clean_message_list
-from transformers.agents import HfEngine
-from transformers.agents import ReactCodeAgent, HfEngine
-from transformers.agents.prompts import DEFAULT_REACT_CODE_SYSTEM_PROMPT, DEFAULT_REACT_JSON_SYSTEM_PROMPT
-from transformers.agents.default_tools import Tool
 from scripts.tools.visual_qa import VisualQATool, VisualQAGPT4Tool
-from transformers.agents import PythonInterpreterTool
-import asyncio
+
+load_dotenv(override=True)
+login(os.getenv("HUGGINGFACEHUB_API_TOKEN"))
 
 ### IMPORTANT: EVALUATION SWITCHES
 
 print("Make sure you deactivated Tailsacale VPN, else some URLs will be blocked!")
 
+OUTPUT_DIR = "output_gaia"
 USE_OS_MODELS = False
-USE_JSON_AGENT = False
 
 ### BUILD LLM ENGINES
 
@@ -97,8 +89,6 @@ eval_df = pd.DataFrame(eval_ds)
 print("Loaded evaluation dataset:")
 print(pd.Series(eval_ds["task"]).value_counts())
 
-
-from transformers.agents import ReactJsonAgent, HfEngine
 
 websurfer_llm_engine = HfEngine(
     model=url_qwen2,
@@ -197,14 +187,6 @@ surfer_agent = ReactJsonAgent(
     planning_interval=4,
 )
 
-
-params = {
-    "engine": "bing",
-    "gl": "us",
-    "hl": "en",
-}
-
-import json
 class SearchTool(Tool):
     name = "ask_search_agent"
     description = """
@@ -269,37 +251,22 @@ TASK_SOLVING_TOOLBOX = [
     ti_tool,
 ]
 
-if USE_JSON_AGENT:
-    TASK_SOLVING_TOOLBOX.append(PythonInterpreterTool())
-
 hf_llm_engine = HfEngine(model=url_qwen2)
 
 llm_engine = hf_llm_engine if USE_OS_MODELS else oai_llm_engine
 
-if USE_JSON_AGENT:
-    react_agent = ReactJsonAgent(
-        llm_engine=llm_engine,
-        tools=TASK_SOLVING_TOOLBOX,
-        max_iterations=10,
-        verbose=0,
-        memory_verbose=True,
-        system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT,
-    )
-else:
-    react_agent = ReactCodeAgent(
-        llm_engine=llm_engine,
-        tools=TASK_SOLVING_TOOLBOX,
-        max_iterations=10,
-        verbose=0,
-        memory_verbose=True,
-        system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
-        additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
-        planning_interval=2
-    )
+react_agent = ReactCodeAgent(
+    llm_engine=llm_engine,
+    tools=TASK_SOLVING_TOOLBOX,
+    max_iterations=10,
+    verbose=0,
+    memory_verbose=True,
+    system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
+    additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
+    planning_interval=2
+)
 
 ### EVALUATE
-
-from scripts.reformulator import prepare_response
 
 async def call_transformers(agent, question: str, **kwargs) -> str:
     result = agent.run(question, **kwargs)
@@ -316,10 +283,6 @@ async def call_transformers(agent, question: str, **kwargs) -> str:
             for log in agent.logs
         ],
     }
-
-food_file = "data/gaia/validation/9b54f9d9-35ee-4a14-b62f-d130ea00317f/food_duplicates.xls"
-# surfer_agent.run("What was the revenue of Carrefour in 2013?", run_planning_step=True)
-# surfer_agent
 
 results = asyncio.run(answer_questions(
     eval_ds,

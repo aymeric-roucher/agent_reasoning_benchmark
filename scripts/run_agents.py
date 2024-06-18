@@ -11,10 +11,8 @@ from queue import Queue
 
 from langchain.agents import AgentExecutor
 from langchain.tools.base import ToolException
-from huggingface_hub import InferenceClient
 from transformers.agents.default_tools import Tool
 from transformers.agents.agents import AgentError
-from threading import Thread
 
 
 def acall_langchain_agent(agent: AgentExecutor, question: str) -> str:
@@ -271,67 +269,6 @@ Do not add any information that is not present in the file.
         result = await arun_agent(
             example=example,
             agent_executor=agent,
-            agent_name=agent_name,
-            agent_call_function=agent_call_function,
-        )
-
-        # add in example metadata
-        result.update(
-            {
-                "true_answer": example["true_answer"],
-                "task": example["task"],
-            }
-        )
-        results.append(result)
-
-        with open(output_path, 'w') as f:
-            for d in results:
-                json.dump(d, f, default=serialize_agent_error)
-                f.write('\n')  # add a newline for JSONL format
-    return results
-
-
-def answer_questions_sync(
-    dataset: Dataset,
-    agent_executor: AgentExecutor,
-    agent_name: str,
-    output_folder: str = "output",
-    agent_call_function: Callable = call_langchain_agent,
-) -> List[Dict[str, Any]]:
-    """
-    Evaluates the agent on a given dataset.
-
-    Args:
-        dataset (Dataset): The dataset to test the agent on.
-        agent_executor (AgentExecutor): The agent executor object used to run the agent.
-        agent_name (str): The name of the agent model.
-
-    Returns:
-        List[Dict[str, Any]]: A list of dictionaries containing the evaluation results for each example in the dataset.
-        Each dictionary includes the agent model ID, evaluator model ID, question, ground truth answer, prediction,
-        intermediate steps, evaluation score, evaluation feedback, tool call parsing error flag, iteration limit
-        exceeded flag, agent error (if any), and example metadata (task).
-    """
-    output_path = f"{output_folder}/{agent_name}.jsonl"
-    try:
-        results = pd.read_json(output_path, lines=True).to_dict(orient="records")
-        print(f"Found {len(results)} previous results!")
-    except Exception as e:
-        print(e)
-        print("Found no usable records! 🤔 Starting new.")
-        results = []
-
-    results_df = pd.DataFrame(results)
-
-    for i, example in tqdm(enumerate(dataset), total=len(dataset)):
-        if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique():
-                continue
-
-        # run agent
-        result = run_agent(
-            question=example["question"],
-            agent_executor=agent_executor,
             agent_name=agent_name,
             agent_call_function=agent_call_function,
         )
