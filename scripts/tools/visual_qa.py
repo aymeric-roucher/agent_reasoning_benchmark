@@ -9,7 +9,9 @@ from huggingface_hub import InferenceClient
 from transformers import AutoProcessor, Tool
 import uuid
 import mimetypes
+from dotenv import load_dotenv
 
+load_dotenv(override=True)
 
 idefics_processor = AutoProcessor.from_pretrained("HuggingFaceM4/idefics2-8b")
 

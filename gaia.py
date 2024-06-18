@@ -10,8 +10,7 @@ from huggingface_hub import login
 from transformers.agents.llm_engine import MessageRole, get_clean_message_list
 from transformers.agents import ReactCodeAgent, ReactJsonAgent, HfEngine
 from transformers.agents.prompts import DEFAULT_REACT_CODE_SYSTEM_PROMPT, DEFAULT_REACT_JSON_SYSTEM_PROMPT
-from transformers.agents.default_tools import Tool
-from transformers.agents import PythonInterpreterTool
+from transformers.agents.default_tools import Tool, PythonInterpreterTool
 from scripts.tools.web_surfer import (
     SearchInformationTool,
     NavigationalSearchTool,
@@ -36,6 +35,9 @@ print("Make sure you deactivated Tailsacale VPN, else some URLs will be blocked!
 
 OUTPUT_DIR = "output_gaia"
 USE_OS_MODELS = False
+USE_JSON = True
+
+SET = "validation"
 
 ### BUILD LLM ENGINES
 
@@ -71,7 +73,7 @@ url_command_r = "CohereForAI/c4ai-command-r-plus"
 
 ### LOAD EVALUATION DATASET
 
-eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all")["validation"]
+eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all")[SET]
 eval_ds = eval_ds.rename_columns(
     {"Question": "question", "Final answer": "true_answer", "Level": "task"}
 )
@@ -79,7 +81,7 @@ eval_ds = eval_ds.rename_columns(
 
 def preprocess_file_paths(row):
     if len(row["file_name"]) > 0:
-        row["file_name"] = "data/gaia/validation/" + row["file_name"]
+        row["file_name"] = f"data/gaia/{SET}/" + row["file_name"]
     return row
 
 
@@ -234,7 +236,7 @@ And even if your search is unsuccessful, please return as much context as possib
                     except:
                         answer += f"Tool call: {content[:1000]}\n"
             else:
-                if len(str(content)) > 1000:
+                if len(str(content)) > 2000:
                     answer += "Tool output too long to show.\n"
                 else:
                     answer += str(content) + "\n"
@@ -251,6 +253,9 @@ TASK_SOLVING_TOOLBOX = [
     ti_tool,
 ]
 
+if USE_JSON:
+    TASK_SOLVING_TOOLBOX.append(PythonInterpreterTool())
+
 hf_llm_engine = HfEngine(model=url_qwen2)
 
 llm_engine = hf_llm_engine if USE_OS_MODELS else oai_llm_engine
@@ -265,6 +270,17 @@ react_agent = ReactCodeAgent(
     additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml.etree.ElementTree"],
     planning_interval=2
 )
+
+if USE_JSON:
+    react_agent = ReactJsonAgent(
+        llm_engine=llm_engine,
+        tools=TASK_SOLVING_TOOLBOX,
+        max_iterations=12,
+        verbose=0,
+        memory_verbose=True,
+        system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT,
+        planning_interval=2
+    )
 
 ### EVALUATE
 
@@ -287,7 +303,7 @@ async def call_transformers(agent, question: str, **kwargs) -> str:
 results = asyncio.run(answer_questions(
     eval_ds,
     react_agent,
-    "react_code_gpt4o_17-june_planning2_replan_summary",
+    "react_code_gpt4o_18-june_planning2_replan_summary_json",
     output_folder=OUTPUT_DIR,
     agent_call_function=call_transformers,
     visual_inspection_tool = VisualQAGPT4Tool(),
