@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse, unquote, parse_qs
 from urllib.request import url2pathname
 from typing import Any, Dict, List, Optional, Union, Tuple
 from .mdconvert import MarkdownConverter, UnsupportedFormatException, FileConversionException
+from serpapi import GoogleSearch
 
 
 class SimpleTextBrowser:
@@ -22,22 +23,20 @@ class SimpleTextBrowser:
     def __init__(
         self,
         start_page: Optional[str] = None,
-        viewport_size: Optional[int] = 1024 * 16,
+        viewport_size: Optional[int] = 1024 * 8,
         downloads_folder: Optional[Union[str, None]] = None,
-        bing_api_key: Optional[Union[str, None]] = None,
+        serpapi_key: Optional[Union[str, None]] = None,
         request_kwargs: Optional[Union[Dict[str, Any], None]] = None,
     ):
         self.start_page: str = start_page if start_page else "about:blank"
         self.viewport_size = viewport_size  # Applies only to the standard uri types
-        if not downloads_folder:
-            downloads_folder = os.path.join(os.getcwd(), "downloads")
         self.downloads_folder = downloads_folder
         self.history: List[Tuple[str, float]] = list()
         self.page_title: Optional[str] = None
         self.viewport_current_page = 0
         self.viewport_pages: List[Tuple[int, int]] = list()
         self.set_address(self.start_page)
-        self.bing_api_key = bing_api_key
+        self.serpapi_key = serpapi_key
         self.request_kwargs = request_kwargs
         self._mdconvert = MarkdownConverter()
         self._page_content: str = ""
@@ -50,15 +49,15 @@ class SimpleTextBrowser:
         """Return the address of the current page."""
         return self.history[-1][0]
 
-    def set_address(self, uri_or_path: str) -> None:
+    def set_address(self, uri_or_path: str, filter_year: Optional[int] = None) -> None:
         # TODO: Handle anchors
         self.history.append((uri_or_path, time.time()))
 
         # Handle special URIs
         if uri_or_path == "about:blank":
             self._set_page_content("")
-        elif uri_or_path.startswith("bing:"):
-            self._bing_search(uri_or_path[len("bing:") :].strip())
+        elif uri_or_path.startswith("google:"):
+            self._serpapi_search(uri_or_path[len("google:"):].strip(), filter_year=filter_year)
         else:
             if (
                 not uri_or_path.startswith("http:")
@@ -172,14 +171,14 @@ class SimpleTextBrowser:
 
         return None
 
-    def visit_page(self, path_or_uri: str) -> str:
+    def visit_page(self, path_or_uri: str, filter_year: Optional[int] = None) -> str:
         """Update the address, visit the page, and return the content of the viewport."""
-        self.set_address(path_or_uri)
+        self.set_address(path_or_uri, filter_year=filter_year)
         return self.viewport
 
     def _split_pages(self) -> None:
         # Do not split search results
-        if self.address.startswith("bing:"):
+        if self.address.startswith("google:"):
             self.viewport_pages = [(0, len(self._page_content))]
             return
 
@@ -199,94 +198,65 @@ class SimpleTextBrowser:
             self.viewport_pages.append((start_idx, end_idx))
             start_idx = end_idx
 
-    def _bing_api_call(self, query: str) -> Dict[str, Dict[str, List[Dict[str, Union[str, Dict[str, str]]]]]]:
-        # Make sure the key was set
-        if self.bing_api_key is None:
-            raise ValueError("Missing Bing API key.")
 
-        # Prepare the request parameters
-        request_kwargs = self.request_kwargs.copy() if self.request_kwargs is not None else {}
+    def _serpapi_search(self, query: str, filter_year: Optional[int] = None) -> None:
+        if self.serpapi_key is None:
+            raise ValueError("Missing SerpAPI key.")
+        
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": self.serpapi_key,
+        }
+        if filter_year is not None:
+            params["tbs"] = f"cdr:1,cd_min:01/01/{filter_year},cd_max:12/31/{filter_year}"
 
-        if "headers" not in request_kwargs:
-            request_kwargs["headers"] = {}
-        request_kwargs["headers"]["Ocp-Apim-Subscription-Key"] = self.bing_api_key
-
-        if "params" not in request_kwargs:
-            request_kwargs["params"] = {}
-        request_kwargs["params"]["q"] = query
-        request_kwargs["params"]["textDecorations"] = False
-        request_kwargs["params"]["textFormat"] = "raw"
-
-        request_kwargs["stream"] = False
-
-        # Make the request
-        response = requests.get("https://api.bing.microsoft.com/v7.0/search", **request_kwargs)
-        response.raise_for_status()
-        results = response.json()
-
-        return results  # type: ignore[no-any-return]
-
-    def _bing_search(self, query: str) -> None:
-        results = self._bing_api_call(query)
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        self.page_title = f"{query} - Search"
+        if "organic_results" not in results.keys():
+            raise Exception(f"'organic_results' key not found in results: {results}. Use a less restrictive query.")
+        if len(results['organic_results']) == 0:
+            year_filter_message = f" with filter year={filter_year}" if filter_year is not None else ""
+            self._set_page_content(f"No results found for '{query}'{year_filter_message}. Try with a more general query, or remove the year filter.")
+            return
 
         def _prev_visit(url):
             for i in range(len(self.history) - 1, -1, -1):
                 if self.history[i][0] == url:
-                    # Todo make this more human-friendly
                     return f"You previously visited this page {round(time.time() - self.history[i][1])} seconds ago.\n"
             return ""
 
         web_snippets: List[str] = list()
         idx = 0
-        if "webPages" in results:
-            for page in results["webPages"]["value"]:
+        if "organic_results" in results:
+            for page in results["organic_results"]:
                 idx += 1
-                web_snippets.append(
-                    f"{idx}. [{page['name']}]({page['url']})\n{_prev_visit(page['url'])}{page['snippet']}"
-                )
-                if "deepLinks" in page:
-                    for dl in page["deepLinks"]:
-                        idx += 1
-                        web_snippets.append(
-                            f"{idx}. [{dl['name']}]({dl['url']})\n{_prev_visit(dl['url'])}{dl['snippet'] if 'snippet' in dl else ''}"
-                        )
+                date_published = ""
+                if "date" in page:
+                    date_published = "\nDate published: " + page["date"]
 
-        news_snippets = list()
-        if "news" in results:
-            for page in results["news"]["value"]:
-                idx += 1
-                datePublished = ""
-                if "datePublished" in page:
-                    datePublished = "\nDate published: " + page["datePublished"].split("T")[0]
-                news_snippets.append(
-                    f"{idx}. [{page['name']}]({page['url']})\n{_prev_visit(page['url'])}{page['description']}{datePublished}"
-                )
+                source = ""
+                if "source" in page:
+                    source = "\nSource: " + page["source"]
 
-        video_snippets = list()
-        if "videos" in results:
-            for page in results["videos"]["value"]:
-                if not page["contentUrl"].startswith("https://www.youtube.com/watch?v="):
-                    continue
-                idx += 1
-                datePublished = ""
-                if "datePublished" in page:
-                    datePublished = "\nDate published: " + page["datePublished"].split("T")[0]
-                video_snippets.append(
-                    f"{idx}. [{page['name']}]({page['contentUrl']})\n{_prev_visit(page['contentUrl'])}{page['thumbnail']}{datePublished}"
-                )
+                snippet = ""
+                if "snippet" in page:
+                    snippet = "\n" + page["snippet"]
 
-        self.page_title = f"{query} - Search"
+                redacted_version = f"{idx}. [{page['title']}]({page['link']}){date_published}{source}\n{_prev_visit(page['link'])}{snippet}"
+
+                redacted_version = redacted_version.replace("Your browser can't play this video.", "")
+                web_snippets.append(redacted_version)
+
 
         content = (
-            f"A Bing search for '{query}' found {len(web_snippets) + len(news_snippets) + len(video_snippets)} results:\n\n## Web Results\n"
+            f"A Google search for '{query}' found {len(web_snippets)} results:\n\n## Web Results\n"
             + "\n\n".join(web_snippets)
         )
-        if len(news_snippets) > 0:
-            content += "\n\n## News Results:\n" + "\n\n".join(news_snippets)
-        if len(video_snippets) > 0:
-            content += "\n\n## Video Results:\n" + "\n\n".join(video_snippets)
 
         self._set_page_content(content)
+
 
     def _fetch_page(self, url: str) -> None:
         download_path = ""

@@ -10,13 +10,7 @@ import requests
 from pypdf import PdfReader
 from markdownify import markdownify as md
 import mimetypes
-
-USE_SERPAPI_BROWSER = True
-
-if USE_SERPAPI_BROWSER:
-    from .serpapi_browser import SimpleTextBrowser
-else:
-    from .browser import SimpleTextBrowser
+from .browser import SimpleTextBrowser
 
 load_dotenv(override=True)
 
@@ -27,13 +21,11 @@ browser_config = {
     "downloads_folder": "coding",
     "request_kwargs": {
         "headers": {"User-Agent": user_agent},
+        "timeout": 300,
     },
 }
 
-if USE_SERPAPI_BROWSER:
-    browser_config["serpapi_key"] = os.environ["SERPAPI_API_KEY"]
-else:
-    browser_config["bing_api_key"] = os.environ["BING_API_KEY"]
+browser_config["serpapi_key"] = os.environ["SERPAPI_API_KEY"]
 
 browser = SimpleTextBrowser(**browser_config)
 
@@ -66,23 +58,16 @@ class SearchInformationTool(Tool):
             "description": "The informational web search query to perform."
         }
     }
-    if USE_SERPAPI_BROWSER:
-        inputs["filter_year"]= {
-            "type": "text",
-            "description": "[Optional parameter]: filter the search results to only include pages from a specific year. For example, '2020' will only include pages from 2020. Make sure to use this parameter if you're trying to search for articles from a specific date!"
-        }
+    inputs["filter_year"]= {
+        "type": "text",
+        "description": "[Optional parameter]: filter the search results to only include pages from a specific year. For example, '2020' will only include pages from 2020. Make sure to use this parameter if you're trying to search for articles from a specific date!"
+    }
     output_type = "text"
 
-    if USE_SERPAPI_BROWSER:
-        def forward(self, query: str, filter_year: Optional[int] = None) -> str:
-            browser.visit_page(f"google: {query}", filter_year=filter_year)
-            header, content = _browser_state()
-            return header.strip() + "\n=======================\n" + content
-    else:
-        def forward(self, query: str) -> str:
-            browser.visit_page(f"bing: {query}")
-            header, content = _browser_state()
-            return header.strip() + "\n=======================\n" + content
+    def forward(self, query: str, filter_year: Optional[int] = None) -> str:
+        browser.visit_page(f"google: {query}", filter_year=filter_year)
+        header, content = _browser_state()
+        return header.strip() + "\n=======================\n" + content
 
 
 class NavigationalSearchTool(Tool):
@@ -92,10 +77,7 @@ class NavigationalSearchTool(Tool):
     output_type = "text"
 
     def forward(self, query: str) -> str:
-        if USE_SERPAPI_BROWSER:
-            browser.visit_page(f"google: {query}")
-        else:
-            browser.visit_page(f"bing: {query}")
+        browser.visit_page(f"google: {query}")
 
         # Extract the first line
         m = re.search(r"\[.*?\]\((http.*?)\)", browser.page_content)
