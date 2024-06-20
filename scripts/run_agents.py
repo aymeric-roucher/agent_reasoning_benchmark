@@ -210,7 +210,7 @@ async def answer_questions(
 
         prompt_use_files = ""
         if example['file_name']:
-            prompt_use_files += f"\nTo answer the question above, you will have to use these attached files:"
+            prompt_use_files += f"\n\nTo answer the question above, you will have to use these attached files:"
             if example['file_name'].split('.')[-1] in ['pdf', 'xlsx']:
                 image_path = example['file_name'].split('.')[0] + '.png'
                 if os.path.exists(image_path):
@@ -235,13 +235,13 @@ async def answer_questions(
 {example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the image.
 """.strip()
-                            prompt_use_files += "Description of this image: " + visual_inspection_tool(image_path=file_path, question=prompt) + '\n\n'
+                            prompt_use_files += "> Description of this image: " + visual_inspection_tool(image_path=file_path, question=prompt) + '\n\n'
                         else:
                             prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following question:
 {example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the file.
 """.strip()
-                            prompt_use_files += "Description of this file: " + text_inspector_tool(file_path=file_path, question=prompt, initial_exam_mode=True) + '\n\n'
+                            prompt_use_files += "> Description of this file: " + text_inspector_tool(file_path=file_path, question=prompt, initial_exam_mode=True) + '\n\n'
             elif example['file_name'].split('.')[-1] in ['png', 'jpg', 'jpeg']:
                 prompt_use_files += f"\nAttached image: {example['file_name']}"
             elif example['file_name'].split('.')[-1] in ['mp3', 'm4a', 'wav']:
@@ -254,13 +254,13 @@ Do not add any information that is not present in the file.
 {example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the image.
 """.strip()
-                prompt_use_files += "\nDescription of this image: " + visual_inspection_tool(image_path=example['file_name'], question=prompt)
+                prompt_use_files += "\n> Description of this image: " + visual_inspection_tool(image_path=example['file_name'], question=prompt)
             elif '.zip' not in example['file_name'] and text_inspector_tool is not None:
                 prompt = f"""Write a short caption (5 sentences maximum) for this file. Pay special attention to any details that might be useful for someone answering the following question:
 {example['question']}. But do not try to answer the question directly!
 Do not add any information that is not present in the file.
 """.strip()
-                prompt_use_files += "\nDescription of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt, initial_exam_mode=True)
+                prompt_use_files += "\n> Description of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt, initial_exam_mode=True)
         else:
             prompt_use_files += "\nYou have been given no local files to access."
         example['augmented_question'] = example['question'] + prompt_use_files

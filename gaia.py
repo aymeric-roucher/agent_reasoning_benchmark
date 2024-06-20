@@ -184,7 +184,7 @@ surfer_agent = ReactJsonAgent(
     llm_engine=websurfer_llm_engine,
     tools=WEB_TOOLS,
     max_iterations=14,
-    verbose=1,
+    verbose=2,
     system_prompt=DEFAULT_REACT_JSON_SYSTEM_PROMPT + "\nAdditionally, if after some searching you find out that you need more information to answer the question, you can use `final_answer` with your request for clarification as argument to request for more information.",
     planning_interval=4,
 )
@@ -225,7 +225,7 @@ If it's another format, you can return the url of the file, and your manager wil
 And even if your search is unsuccessful, please return as much context as possible, so they can act upon this feedback.
 """)
         answer = "Here is the report from your team member's search:\n"
-        for message in surfer_agent.write_inner_memory_from_logs(summary_mode=True):
+        for message in surfer_agent.write_inner_memory_from_logs(only_tool_calls=True):
             content = message['content']
             if 'tool_arguments' in str(content):
                 if len(str(content)) < 1000:
@@ -267,7 +267,7 @@ react_agent = ReactCodeAgent(
     verbose=0,
     memory_verbose=True,
     system_prompt=DEFAULT_REACT_CODE_SYSTEM_PROMPT,
-    additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml.etree.ElementTree", "yahoo_finance"],
+    additional_authorized_imports=["requests", "zipfile", "os", "pandas", "numpy", "sympy", "json", "bs4", "pubchempy", "xml", "yahoo_finance", "Bio", "sklearn", "scipy"],
     planning_interval=2
 )
 
@@ -300,18 +300,10 @@ async def call_transformers(agent, question: str, **kwargs) -> str:
         ],
     }
 
-# res = surfer_agent.run("What does Claude shannon say in this video?", video='https://www.youtube.com/watch?v=aygSMgK3BEM')
-# react_agent.run("According to Yahoo Finance, when was the first year the Apple stock went above $50 (without adjusting for stock split)?")
-# assert False
-
-res = VisitTool()("https://www.researchgate.net/publication/283980876_Effects_of_Sweet_Potato_Feathery_Mottle_Virus_and_Sweet_Potato_Chlorotic_Stunt_Virus_on_the_Yield_of_SweetPotato_in_Uganda")
-print(res)
-
-assert False
 results = asyncio.run(answer_questions(
     eval_ds,
     react_agent,
-    "react_code_gpt4o_20-june_planning2_replan_noanchorplan_nusummary",
+    "react_code_gpt4o_20-june_planning2_replan_noanchorplan_nosummary",
     output_folder=OUTPUT_DIR,
     agent_call_function=call_transformers,
     visual_inspection_tool = VisualQAGPT4Tool(),

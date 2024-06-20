@@ -15,6 +15,7 @@ from urllib.request import url2pathname
 from typing import Any, Dict, List, Optional, Union, Tuple
 from .mdconvert import MarkdownConverter, UnsupportedFormatException, FileConversionException
 from serpapi import GoogleSearch
+from .cookies import COOKIES
 
 
 class SimpleTextBrowser:
@@ -38,6 +39,7 @@ class SimpleTextBrowser:
         self.set_address(self.start_page)
         self.serpapi_key = serpapi_key
         self.request_kwargs = request_kwargs
+        self.request_kwargs["cookies"] = COOKIES
         self._mdconvert = MarkdownConverter()
         self._page_content: str = ""
 
@@ -318,6 +320,11 @@ class SimpleTextBrowser:
                     # Render it
                     local_uri = pathlib.Path(download_path).as_uri()
                     self.set_address(local_uri)
+
+                if url.startswith("https://www.youtube.com/watch?"):
+                    transcript = self._mdconvert.convert(url).text_content
+                    print(transcript)
+                    self._set_page_content(transcript)
 
         except UnsupportedFormatException as e:
             print(e)

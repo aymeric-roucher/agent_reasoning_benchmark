@@ -12,35 +12,15 @@ import copy
 import mammoth
 import pptx
 import pandas as pd
-import sys
 import traceback
 
-import PIL
-import shutil
-import subprocess
-import easyocr
-import numpy as np
-
-import base64
-
-from urllib.parse import urljoin, urlparse, parse_qs
-from urllib.request import url2pathname
+from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
-from typing import Any, Dict, List, Optional, Union, Tuple
-from transformers.agents import SpeechToTextTool
-from .visual_qa import VisualQAGPT4Tool
+from typing import Any, Dict, List, Optional, Union
 import pdfminer
 import pdfminer.high_level
+from youtube_transcript_api import YouTubeTranscriptApi
 
-
-# Optional YouTube transcription support
-IS_YOUTUBE_TRANSCRIPT_CAPABLE = False
-try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    IS_YOUTUBE_TRANSCRIPT_CAPABLE = True
-except ModuleNotFoundError:
-    pass
 
 
 class DocumentConverterResult:
@@ -227,23 +207,19 @@ class YouTubeConverter(DocumentConverter):
         if description:
             webpage_text += f"\n### Description\n{description}\n"
 
-        if IS_YOUTUBE_TRANSCRIPT_CAPABLE:
-            transcript_text = ""
-            parsed_url = urlparse(url)
-            params = parse_qs(parsed_url.query)
-            if "v" in params:
-                video_id = params["v"][0]
-                try:
-                    # Must be a single transcript.
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-                    transcript_text = " ".join([part["text"] for part in transcript])
-                    # Alternative formatting:
-                    # formatter = TextFormatter()
-                    # formatter.format_transcript(transcript)
-                except:
-                    pass
-            if transcript_text:
-                webpage_text += f"\n### Transcript\n{transcript_text}\n"
+        transcript_text = ""
+        parsed_url = urlparse(url)
+        params = parse_qs(parsed_url.query)
+
+        video_id = params["v"][0]
+        # Must be a single transcript.
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        transcript_text = " ".join([part["text"] for part in transcript])
+        # Alternative formatting:
+        # formatter = TextFormatter()
+        # formatter.format_transcript(transcript)
+        if transcript_text:
+            webpage_text += f"\n### Transcript\n{transcript_text}\n"
 
         return DocumentConverterResult(
             title=title if title else soup.title.string,
@@ -510,7 +486,6 @@ class MarkdownConverter:
         # Register converters for successful browsing operations
         # Later registrations are tried first / take higher priority than earlier registrations
         # To this end, the most specific converters should appear below the most generic converters
-        self.register_page_converter(HtmlConverter())
         self.register_page_converter(WikipediaConverter())
         self.register_page_converter(XmlConverter())
         self.register_page_converter(YouTubeConverter())
@@ -520,6 +495,7 @@ class MarkdownConverter:
         # self.register_page_converter(ImageConverter())
         self.register_page_converter(PdfConverter())
         self.register_page_converter(AudioConverter())
+        self.register_page_converter(HtmlConverter())
         self.register_page_converter(PlainTextConverter())
 
     def convert(self, source, **kwargs):
