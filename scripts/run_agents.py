@@ -13,7 +13,7 @@ from langchain.agents import AgentExecutor
 from langchain.tools.base import ToolException
 from transformers.agents.default_tools import Tool
 from transformers.agents.agents import AgentError
-
+from .evaluation.unsolved_questions import UNSOLVED_QUESTIONS
 
 def acall_langchain_agent(agent: AgentExecutor, question: str) -> str:
     return agent.ainvoke({"input": question})
@@ -193,11 +193,12 @@ async def answer_questions(
         exceeded flag, agent error (if any), and example metadata (task).
     """
     output_path = f"{output_folder}/{agent_name}.jsonl"
+    print(f"Loading answers from {output_path}...")
     try:
         results = pd.read_json(output_path, lines=True).to_dict(orient="records")
         print(f"Found {len(results)} previous results!")
     except Exception as e:
-        print(e)
+        print("Error when loading records: ", e)
         print("Found no usable records! 🤔 Starting new.")
         results = []
 
@@ -205,11 +206,12 @@ async def answer_questions(
 
     for _, example in tqdm(enumerate(dataset), total=len(dataset)):
         if len(results_df) > 0:
-            if example["question"] in results_df["question"].unique() or "youtube video The Thinking Machine" in example['question']:
+            if example["question"] in results_df["question"].unique():
                 continue
-
         prompt_use_files = ""
         if example['file_name']:
+            if '.MOV' in example['file_name']:
+                continue
             prompt_use_files += f"\n\nTo answer the question above, you will have to use these attached files:"
             if example['file_name'].split('.')[-1] in ['pdf', 'xlsx']:
                 image_path = example['file_name'].split('.')[0] + '.png'
@@ -225,7 +227,7 @@ async def answer_questions(
                 shutil.unpack_archive(example['file_name'], folder_name)
 
                 # Convert the extracted files
-                prompt_use_files = "\nYou have been given a zip archive of supporting files. We extracted it into a directory: find the extracted files at the following paths:\n"
+                prompt_use_files = "\n\nYou have been given a zip archive of supporting files. We extracted it into a directory: find the extracted files at the following paths:\n"
                 for root, dirs, files in os.walk(folder_name):
                     for file in files:
                         file_path = os.path.join(root, file)
@@ -262,8 +264,11 @@ Do not add any information that is not present in the file.
 """.strip()
                 prompt_use_files += "\n> Description of this file: " + text_inspector_tool(file_path=example['file_name'], question=prompt, initial_exam_mode=True)
         else:
-            prompt_use_files += "\nYou have been given no local files to access."
-        example['augmented_question'] = example['question'] + prompt_use_files
+            prompt_use_files += "\n\nYou have been given no local files to access."
+        example['augmented_question'] = f"""It is paramount that you complete this task and provide a correct answer.
+Give it all you can: I know for a fact that you have access to all the relevant tools to solve it. Failure or 'I cannot answer' will not be tolerated, success will be rewarded.
+Here is the task:
+""" + example['question'] + prompt_use_files
 
         # run agent
         result = await arun_agent(
@@ -286,6 +291,8 @@ Do not add any information that is not present in the file.
             for d in results:
                 json.dump(d, f, default=serialize_agent_error)
                 f.write('\n')  # add a newline for JSONL format
+        # except Exception as e:
+        #     print("EXCEPTION!!!!=================\nFIND THE EXCEPTION LOG BELOW:\n", e)
     return results
 
 

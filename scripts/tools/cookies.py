@@ -613,6 +613,96 @@ COOKIES_LIST += [
         "value": "1"
     }
 ]
+COOKIES_LIST += [
+    {
+        "domain": "orcid.org",
+        "hostOnly": True,
+        "httpOnly": False,
+        "name": "AWSELBCORS",
+        "path": "/",
+        "sameSite": "no_restriction",
+        "secure": True,
+        "session": True,
+        "storeId": None,
+        "value": "CBD1D7FF1216388FA48838CBCA4774FD22800B8FB548A40EF92BB0994D5B77A8410307CDEAA69C52236663F2BF89B252C17BC0FCDF790FD59771BDDF6EA8CA4CFD29D8733F"
+    },
+    {
+        "domain": ".orcid.org",
+        "expirationDate": 1753452454.637671,
+        "hostOnly": False,
+        "httpOnly": False,
+        "name": "_ga_9R61FWK9H5",
+        "path": "/",
+        "sameSite": None,
+        "secure": False,
+        "session": False,
+        "storeId": None,
+        "value": "GS1.1.1718892454.1.0.1718892454.0.0.0"
+    },
+    {
+        "domain": ".orcid.org",
+        "expirationDate": 1753452454.63421,
+        "hostOnly": False,
+        "httpOnly": False,
+        "name": "_ga",
+        "path": "/",
+        "sameSite": None,
+        "secure": False,
+        "session": False,
+        "storeId": None,
+        "value": "GA1.1.2021310691.1718892455"
+    },
+    {
+        "domain": "orcid.org",
+        "hostOnly": True,
+        "httpOnly": False,
+        "name": "AWSELB",
+        "path": "/",
+        "sameSite": None,
+        "secure": False,
+        "session": True,
+        "storeId": None,
+        "value": "CBD1D7FF1216388FA48838CBCA4774FD22800B8FB548A40EF92BB0994D5B77A8410307CDEAA69C52236663F2BF89B252C17BC0FCDF790FD59771BDDF6EA8CA4CFD29D8733F"
+    },
+    {
+        "domain": ".orcid.org",
+        "expirationDate": 1750428454,
+        "hostOnly": False,
+        "httpOnly": False,
+        "name": "OptanonAlertBoxClosed",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": False,
+        "session": False,
+        "storeId": None,
+        "value": "2024-06-20T14:07:34.583Z"
+    },
+    {
+        "domain": ".orcid.org",
+        "expirationDate": 1750428454,
+        "hostOnly": False,
+        "httpOnly": False,
+        "name": "OptanonConsent",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": False,
+        "session": False,
+        "storeId": None,
+        "value": "isGpcEnabled=0&datestamp=Thu+Jun+20+2024+16%3A07%3A34+GMT%2B0200+(heure+d%E2%80%99%C3%A9t%C3%A9+d%E2%80%99Europe+centrale)&version=202310.2.0&browserGpcFlag=0&isIABGlobal=False&hosts=&landingPath=NotLandingPage&groups=C0001%3A1%2CC0003%3A1%2CC0002%3A1%2CC0004%3A1"
+    },
+    {
+        "domain": "orcid.org",
+        "hostOnly": True,
+        "httpOnly": False,
+        "name": "XSRF-TOKEN",
+        "path": "/",
+        "sameSite": None,
+        "secure": True,
+        "session": True,
+        "storeId": None,
+        "value": "6957be7a-bcb4-4d59-a522-ea9b6b210ed9"
+    }
+]
 from requests.cookies import RequestsCookieJar
 
 # Create a RequestsCookieJar instance

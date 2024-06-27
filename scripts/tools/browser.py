@@ -321,10 +321,6 @@ class SimpleTextBrowser:
                     local_uri = pathlib.Path(download_path).as_uri()
                     self.set_address(local_uri)
 
-                if url.startswith("https://www.youtube.com/watch?"):
-                    transcript = self._mdconvert.convert(url).text_content
-                    print(transcript)
-                    self._set_page_content(transcript)
 
         except UnsupportedFormatException as e:
             print(e)

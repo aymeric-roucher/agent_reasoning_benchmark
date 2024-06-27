@@ -142,7 +142,7 @@ class VisualQAGPT4Tool(Tool):
     inputs = {
         "question": {"description": "the question to answer", "type": "text"},
         "image_path": {
-            "description": "The path to the image on which to answer the question",
+            "description": "The path to the image on which to answer the question. This should be a local path to downloaded image.",
             "type": "text",
         },
     }
@@ -153,7 +153,8 @@ class VisualQAGPT4Tool(Tool):
         if not question:
             add_note = True
             question = "Please write a detailed caption for this image."
-
+        if not isinstance(image_path, str):
+            raise Exception("You should provide only one string as argument to this tool!")
 
         base64_image = encode_image(image_path)
 
@@ -179,7 +180,10 @@ class VisualQAGPT4Tool(Tool):
             "max_tokens": 500
         }
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-        output = response.json()['choices'][0]['message']['content']
+        try:
+            output = response.json()['choices'][0]['message']['content']
+        except Exception:
+            raise Exception(f"Response format unexpected: {response.json()}")
 
         if add_note:
             output = f"You did not provide a particular question, so here is a detailed caption for the image: {output}"

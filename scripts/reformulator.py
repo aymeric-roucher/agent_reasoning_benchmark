@@ -51,7 +51,6 @@ If you are unable to determine the final answer, output 'FINAL ANSWER: Unable to
     print("Reformulated answer is: ", final_answer)
 
     if "unable to determine" in final_answer.lower():
-        print("\n>>>Making an educated guess.\n")
         messages.append({"role": "assistant", "content": response })
         messages.append({"role": "user", "content": """
 I understand that a definitive answer could not be determined. Please make a well-informed EDUCATED GUESS based on the conversation.
@@ -65,6 +64,7 @@ If you are asked for a comma separated list, apply the above rules depending on 
 """.strip()})
 
         response = llm_engine(messages)
+        print("\n>>>Making an educated guess.\n", response)
         final_answer = response.split("EDUCATED GUESS: ")[-1].strip()
     return final_answer
 

@@ -213,6 +213,7 @@ class YouTubeConverter(DocumentConverter):
 
         video_id = params["v"][0]
         # Must be a single transcript.
+        print("VIDDDD ID:", video_id)
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
         transcript_text = " ".join([part["text"] for part in transcript])
         # Alternative formatting:
@@ -270,10 +271,19 @@ class AudioConverter(DocumentConverter):
     def convert(self, local_path, **kwargs) -> Union[None, DocumentConverterResult]:
         # Bail if not an audio file
         extension = kwargs.get("file_extension", "")
-        if extension.lower() not in [".wav", ".mp3", ".flac"]:
+        if extension.lower() not in [".wav", ".mp3", ".flac", ".m4a"]:
             return None
-
-        result = self.client.automatic_speech_recognition(audio=local_path).text
+        try:
+            result = self.client.automatic_speech_recognition(audio=local_path).text
+        except Exception as e:
+            print("Exception in decoding audio:", e)
+            from openai import OpenAI
+            oai_client = OpenAI()
+            from pathlib import Path
+            result = oai_client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=Path(local_path)
+            ).text
 
         return DocumentConverterResult(
             title=None,
