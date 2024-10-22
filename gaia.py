@@ -37,7 +37,7 @@ OUTPUT_DIR = "output_gaia"
 USE_OS_MODELS = False
 USE_JSON = False
 
-SET = "test"
+SET = "validation"
 
 ### BUILD LLM ENGINES
 
@@ -66,6 +66,7 @@ class OpenAIModel:
 
 
 oai_llm_engine = OpenAIModel()
+
 
 url_llama3 = "meta-llama/Meta-Llama-3-70B-Instruct"
 url_qwen2 = "https://azbwihkodyacoe54.us-east-1.aws.endpoints.huggingface.cloud"
@@ -228,7 +229,7 @@ If it's another format, you can return the url of the file, and your manager wil
 And even if your search is unsuccessful, please return as much context as possible, so they can act upon this feedback.
 """)
         answer = "Here is the report from your team member's search:\n"
-        for message in surfer_agent.write_inner_memory_from_logs(only_tool_calls=True):
+        for message in surfer_agent.write_inner_memory_from_logs():
             content = message['content']
             if 'tool_arguments' in str(content):
                 if len(str(content)) < 1000 or "[FACTS]" in str(content):
@@ -331,7 +332,7 @@ async def call_transformers(agent, question: str, **kwargs) -> str:
 results = asyncio.run(answer_questions(
     eval_ds,
     react_agent,
-    "react_code_gpt4o_23-june_planning2_newprompt5_test",
+    "react_code_claude_28-june_planning2_newprompt5",
     output_folder=f"{OUTPUT_DIR}/{SET}",
     agent_call_function=call_transformers,
     visual_inspection_tool = VisualQAGPT4Tool(),
